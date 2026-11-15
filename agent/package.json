@@ -1,0 +1,25 @@
+{
+  "name": "stardewpilot-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "pi extension that connects the StardewPilot bridge mod to a pi agent",
+  "license": "MIT",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.19"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.5.2",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}

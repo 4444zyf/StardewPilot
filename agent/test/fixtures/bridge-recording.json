@@ -1,0 +1,221 @@
+{
+  "initialize": {
+    "protocolVersion": "2025-06-18",
+    "serverInfo": {
+      "name": "stardewpilot-bridge",
+      "version": "0.1.0"
+    },
+    "capabilities": {
+      "tools": {}
+    },
+    "gameVersion": "1.6.15"
+  },
+  "tools/list": {
+    "tools": [
+      {
+        "name": "get_bundles",
+        "description": "Community Center bundles the farmer can see: each room's bundles with items still needed and items already given. Returns why if bundles are not visible yet or the farm chose Joja.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "get_calendar",
+        "description": "This season's calendar: festivals and villager birthdays with their days, plus today's and tomorrow's events and tomorrow's weather forecast.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "get_crops",
+        "description": "Crops planted on a map (default Farm, including garden pots): grouped by crop with counts that are ready to harvest, need water, or are dead, and the days until the next harvest. Set includeTiles for tile positions.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "Map name. Default Farm."
+            },
+            "includeTiles": {
+              "type": "boolean",
+              "description": "List tile positions for each group. Default false."
+            }
+          },
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "get_gift_tastes",
+        "description": "The gifts a villager loves, likes, dislikes and hates, from the game's data. Universal tastes apply on top of these.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "npc": {
+              "type": "string",
+              "description": "Villager name, for example Abigail."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "npc"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "get_inventory",
+        "description": "The farmer's backpack: every slot with item name, id, stack, quality and sell price. Slot 0-11 is the toolbar row.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "get_item_info",
+        "description": "Look up an item by name or id: type, category, description, sell price, energy and health if edible. For seeds also the crop's seasons, days to grow and regrowth; for crops, which seed grows them.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "item": {
+              "type": "string",
+              "description": "Item name (for example 'Parsnip Seeds') or qualified id (for example '(O)472')."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "item"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "get_location",
+        "description": "Describe a map: size, exits (warps and doors with their target maps), buildings, NPCs and players present, forage, machines and their output, chests and other notable objects. Defaults to the farmer's current map.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "Map name such as Farm, Town, SeedShop, FarmHouse. Omit for the current map."
+            },
+            "includeObjects": {
+              "type": "boolean",
+              "description": "Include a list of every placed object with its tile (can be long). Default false."
+            }
+          },
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "get_quests",
+        "description": "The quest log: each quest's title, description, objectives and days left.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "get_relationships",
+        "description": "Every villager the farmer has met: hearts, friendship points, whether talked to today, gifts given today and this week, birthday, relationship status, and current map when known.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "get_skills",
+        "description": "Skill levels, experience points and professions.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "get_status",
+        "description": "Overview of the current moment: whether a save is loaded, date and time, weather, the farmer's money, energy, health, location, tile and held item, and whether the game is in a menu, event or paused. Call this first.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      }
+    ]
+  },
+  "tools/call": {
+    "get_status": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"saveLoaded\":true,\"farmer\":\"Pilot\",\"farm\":\"Test\",\"multiplayer\":\"single-player\",\"date\":{\"season\":\"spring\",\"day\":3,\"year\":1,\"weekday\":\"Wed\"},\"time\":\"6:00am\",\"timeValue\":600,\"weatherToday\":\"Rain\",\"weatherTomorrow\":\"Rain\",\"dailyLuck\":0.059,\"money\":500,\"energy\":{\"current\":270,\"max\":270},\"health\":{\"current\":100,\"max\":100},\"location\":\"FarmHouse\",\"locationDisplayName\":\"Test Farm\",\"tile\":{\"x\":9,\"y\":9},\"facing\":\"right\",\"heldItem\":{\"name\":\"Axe\",\"id\":\"(T)Axe\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true},\"toolbarSlot\":0,\"state\":{\"eventRunning\":false,\"festival\":false,\"paused\":false,\"canMove\":true}}"
+        }
+      ],
+      "isError": false
+    },
+    "get_inventory": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"capacity\":12,\"used\":5,\"selectedSlot\":0,\"money\":500,\"slots\":[{\"slot\":0,\"item\":{\"name\":\"Axe\",\"id\":\"(T)Axe\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true}},{\"slot\":1,\"item\":{\"name\":\"Hoe\",\"id\":\"(T)Hoe\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true}},{\"slot\":2,\"item\":{\"name\":\"Watering Can\",\"id\":\"(T)WateringCan\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true,\"waterLeft\":40}},{\"slot\":3,\"item\":{\"name\":\"Pickaxe\",\"id\":\"(T)Pickaxe\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true}},{\"slot\":4,\"item\":{\"name\":\"Scythe\",\"id\":\"(W)47\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true}}]}"
+        }
+      ],
+      "isError": false
+    },
+    "get_crops": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"location\":\"Farm\",\"possiblyStale\":false,\"totals\":{\"crops\":0,\"ready\":0,\"needWater\":0,\"dead\":0,\"emptyTilledTiles\":0},\"groups\":[]}"
+        }
+      ],
+      "isError": false
+    },
+    "get_gift_tastes": {
+      "content": [
+        {
+          "type": "text",
+          "text": "No gift data for 'Nobody'. Use the villager's name as shown in get_relationships."
+        }
+      ],
+      "isError": true
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "Name": "StardewPilot",
+  "Author": "4444zyf",
+  "Version": "0.1.0",
+  "Description": "Agent copilot bridge: exposes game state and actions to a local pi agent over a token-protected WebSocket.",
+  "UniqueID": "4444zyf.StardewPilot",
+  "EntryDll": "StardewPilot.dll",
+  "MinimumApiVersion": "4.0.0",
+  "UpdateKeys": []
+}
