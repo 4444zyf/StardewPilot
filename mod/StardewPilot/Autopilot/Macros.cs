@@ -75,15 +75,38 @@ internal sealed class Macros
             Point me = Game1.player.TilePoint;
             if (Math.Abs(me.X - target.X) + Math.Abs(me.Y - target.Y) == 1)
                 yield break;
-            IEnumerable walk;
-            try { walk = Navigation.WalkWithinMap(ctx, target, adjacent: true); }
-            catch (JobStop) { walk = Array.Empty<object>(); }
-            foreach (object? s in walk)
-                yield return s;
+            // The villager may walk off (even to another map) while we approach: on failure, look again.
+            IEnumerator walk = Navigation.WalkWithinMap(ctx, target, adjacent: true).GetEnumerator();
+            while (true)
+            {
+                bool more;
+                try { more = walk.MoveNext(); } catch (JobStop) { break; }
+                if (!more) break;
+                yield return walk.Current;
+            }
         }
         Point t = who.TilePoint, m = Game1.player.TilePoint;
-        if (Math.Abs(m.X - t.X) + Math.Abs(m.Y - t.Y) != 1)
-            throw JobContext.Fail($"Could not catch up with {who.displayName}.");
+        if (Math.Abs(m.X - t.X) + Math.Abs(m.Y - t.Y) == 1)
+            yield break;
+
+        // Shopkeepers stand behind counters: talk across the counter from two tiles away, as players do.
+        foreach (Point across in new[] { new Point(t.X, t.Y + 2), new Point(t.X, t.Y - 2), new Point(t.X + 2, t.Y), new Point(t.X - 2, t.Y) })
+        {
+            if (!Navigation.IsWalkable(Game1.currentLocation, across))
+                continue;
+            bool reached = true;
+            IEnumerator walk = Navigation.WalkWithinMap(ctx, across, adjacent: false).GetEnumerator();
+            while (true)
+            {
+                bool more;
+                try { more = walk.MoveNext(); } catch (JobStop) { reached = false; break; }
+                if (!more) break;
+                yield return walk.Current;
+            }
+            if (reached && Game1.player.TilePoint == across)
+                yield break;
+        }
+        throw JobContext.Fail($"Could not get close enough to {who.displayName}.");
     }
 
     private static NPC FindNpc(string name)
