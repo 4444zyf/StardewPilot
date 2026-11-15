@@ -11,7 +11,7 @@ See [the design](docs/2026-11-15-agent-copilot-design.md) for the full plan.
 
 ## Status
 
-Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (private chat overlay, proactive tips, instant warnings), the commanded autopilot (the agent walks the farmer between maps and runs tasks such as planting, watering, shopping and shipping when you ask), and self-play toward a goal you set. From step 5: fishing (including the minigame), a basic mines-and-combat routine, and a one-click launcher. A public release (Nexus or similar) has not been made.
+Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (private chat overlay, proactive tips, instant warnings), the commanded autopilot (the agent walks the farmer between maps and runs tasks such as planting, watering, shopping and shipping when you ask), and self-play toward a goal you set. From step 5: fishing (including the minigame), a basic mines-and-combat routine, and a one-click launcher. Released as [v0.1.0](https://github.com/4444zyf/StardewPilot/releases/tag/v0.1.0) on GitHub (not on Nexus).
 
 ## Requirements
 

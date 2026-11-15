@@ -1,7 +1,7 @@
 # Agent copilot: design
 
 Date: 2026-11-15
-Status: agreed in design interview, revised after review the same day. Steps 1–4 built and tested in-game; step 5 partly built (fishing, basic mines and combat, one-click launcher); no public release yet
+Status: agreed in design interview, revised after review the same day. All five build steps built and tested in-game; released as v0.1.0 on GitHub (combat is basic)
 
 ## What it is
 
