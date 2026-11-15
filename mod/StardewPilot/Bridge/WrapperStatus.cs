@@ -41,7 +41,12 @@ internal static class WrapperStatus
                 if (write == lastWrite && current != Snapshot.None)
                     return current;
                 lastWrite = write;
-                JObject json = JObject.Parse(File.ReadAllText(FilePath));
+                // Open so that the wrapper can replace the file while we read (Windows blocks that by default).
+                string text;
+                using (var stream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+                using (var reader = new StreamReader(stream))
+                    text = reader.ReadToEnd();
+                JObject json = JObject.Parse(text);
                 string state = json.Value<string>("state") ?? "none";
                 int pid = json.Value<int?>("pid") ?? 0;
                 if (state != "stopped" && !IsAlive(pid))

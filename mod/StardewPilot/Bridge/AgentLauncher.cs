@@ -35,6 +35,12 @@ internal sealed class AgentLauncher : IDisposable
         bool useWrapper = cfg.UseWrapper && File.Exists(wrapper);
         if (cfg.UseWrapper && !useWrapper)
             this.monitor.Log($"Launcher: the wrapper was not found at {wrapper}; starting pi directly.", LogLevel.Warn);
+        if (!useWrapper && OperatingSystem.IsWindows())
+        {
+            // On Windows `pi` is a .cmd script, which cannot be started directly. The wrapper starts pi through node instead.
+            this.monitor.Log("Launcher: starting pi without the wrapper is not supported on Windows. Set Launcher.UseWrapper to true, or start pi yourself in a terminal.", LogLevel.Error);
+            return;
+        }
         this.command = useWrapper ? cfg.NodeCommand : cfg.PiCommand;
 
         var info = new ProcessStartInfo(this.command)

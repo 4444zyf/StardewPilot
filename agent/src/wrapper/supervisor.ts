@@ -6,7 +6,9 @@ import { type ChildProcess, spawn } from "node:child_process";
 export type AgentState = "needs_setup" | "starting" | "running" | "error" | "stopped";
 
 export interface PiLaunch {
-	command: string;
+	/** pi's JavaScript entry file. It is started with the Node that runs the wrapper, never through the
+	 *  `pi` command: on Windows that is a .cmd shim, which Node refuses to start without a shell. */
+	entry: string;
 	extension: string;
 	piDir: string;
 	model: string;
@@ -72,13 +74,13 @@ export class Supervisor {
 	private spawnPi() {
 		const l = this.launch;
 		if (!l) return;
-		const args = ["--mode", "rpc", "--no-builtin-tools", "-e", l.extension, "--model", l.model];
+		const args = [l.entry, "--mode", "rpc", "--no-builtin-tools", "-e", l.extension, "--model", l.model];
 		if (l.thinking && l.thinking !== "off") args.push("--thinking", l.thinking);
 		this.set("starting", `Starting pi with ${l.model}`);
 		this.startedAt = Date.now();
 		let child: ChildProcess;
 		try {
-			child = spawn(l.command, args, {
+			child = spawn(process.execPath, args, {
 				cwd: l.cwd,
 				env: { ...process.env, PI_CODING_AGENT_DIR: l.piDir },
 				stdio: ["pipe", "pipe", "pipe"],

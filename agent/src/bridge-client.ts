@@ -4,8 +4,8 @@
  * The transport is pluggable so tests can replay recorded bridge messages without the game.
  */
 import { readFileSync } from "node:fs";
-import { homedir, platform } from "node:os";
 import { join } from "node:path";
+import { configDir } from "./wrapper/files.ts";
 
 export interface McpTool {
 	name: string;
@@ -37,15 +37,9 @@ export interface ConnectionInfo {
 	token: string;
 }
 
-/** Where the mod writes its port and token. Matches ConnectionFile.cs. */
+/** Where the mod writes its port and token. */
 export function connectionFilePath(): string {
-	const base =
-		platform() === "win32"
-			? (process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"))
-			: platform() === "darwin"
-				? join(homedir(), ".config")
-				: (process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"));
-	return join(base, "StardewPilot", "bridge.json");
+	return join(configDir(), "bridge.json");
 }
 
 /** Read connection details from env vars or the mod's connection file. */

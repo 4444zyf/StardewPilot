@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, it } from "node:test";
 import { Supervisor } from "../src/wrapper/supervisor.ts";
 
-/** A fake pi: records its arguments and environment, then either exits at once or waits for stdin to close. */
+/** A fake pi (a JavaScript file, started with node like the real one): records its arguments and environment, then either exits at once or waits for stdin to close. */
 function fakePi(dir: string, mode: "crash" | "stay"): string {
 	const script = join(dir, `fake-pi-${mode}.mjs`);
 	writeFileSync(script, `
@@ -15,9 +15,7 @@ ${mode === "crash"
 		? `console.error("fatal: no credentials"); process.exit(3);`
 		: `process.stdin.resume(); process.stdin.on("end", () => process.exit(0));`}
 `);
-	const wrapper = join(dir, `fake-pi-${mode}.sh`);
-	writeFileSync(wrapper, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(script)} "$@"\n`, { mode: 0o755 });
-	return wrapper;
+	return script;
 }
 
 const until = async (cond: () => boolean, ms = 3000) => {
@@ -28,12 +26,12 @@ const until = async (cond: () => boolean, ms = 3000) => {
 	}
 };
 
-describe("pi supervisor", { skip: process.platform === "win32" }, () => {
+describe("pi supervisor", () => {
 	it("starts pi with the extension, model and folder, and stops it by closing stdin", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "sp-sup-"));
 		const states: string[] = [];
 		const sup = new Supervisor(() => states.push(sup.state), { startupMs: 50 });
-		await sup.start({ command: fakePi(dir, "stay"), extension: "/ext/index.ts", piDir: "/pi-dir", model: "keyco/m1", thinking: "low", cwd: dir });
+		await sup.start({ entry: fakePi(dir, "stay"), extension: "/ext/index.ts", piDir: "/pi-dir", model: "keyco/m1", thinking: "low", cwd: dir });
 		await until(() => sup.state === "running" && existsSync(join(dir, "runs.log")));
 		const run = JSON.parse(readFileSync(join(dir, "runs.log"), "utf8").trim());
 		assert.deepEqual(run.args, ["--mode", "rpc", "--no-builtin-tools", "-e", "/ext/index.ts", "--model", "keyco/m1", "--thinking", "low"]);
@@ -48,7 +46,7 @@ describe("pi supervisor", { skip: process.platform === "win32" }, () => {
 	it("restarts pi that keeps failing, then gives up with its last error", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "sp-sup-"));
 		const sup = new Supervisor(() => {}, { backoff: [10, 20], startupMs: 1000 });
-		await sup.start({ command: fakePi(dir, "crash"), extension: "/ext/index.ts", piDir: "/pi", model: "keyco/m1", thinking: "off", cwd: dir });
+		await sup.start({ entry: fakePi(dir, "crash"), extension: "/ext/index.ts", piDir: "/pi", model: "keyco/m1", thinking: "off", cwd: dir });
 		await until(() => sup.state === "error", 5000);
 		const runs = readFileSync(join(dir, "runs.log"), "utf8").trim().split("\n");
 		assert.equal(runs.length, 5);

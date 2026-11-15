@@ -148,7 +148,7 @@ class Wrapper {
 				return;
 			}
 			await this.supervisor.start({
-				command: this.pi.command,
+				entry: this.pi.entry,
 				extension: this.args.extension,
 				piDir: this.runtime.piDir,
 				model: this.settings.model,

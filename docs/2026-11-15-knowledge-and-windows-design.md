@@ -43,7 +43,7 @@ All read-only. Each returns display names in the game's language plus stable IDs
 
 | Tool | Answers | Source | Raw or computed |
 |---|---|---|---|
-| `get_fish_info` | Where and when a fish can be caught: maps, seasons, hours, weather, fishing level. Or, for a map, which fish are possible there, and which are possible right now | `Data/Fish`, `Data/Locations`, plus a hand-written table for maps whose fish are in code | Listing: raw. "Possible now": computed |
+| `get_fish_info` | Where and when a fish can be caught: maps, seasons, hours, weather, fishing level. Or, for a map, which fish are possible there, and which are possible right now | `Data/Fish`, `Data/Locations`, the farm's map property, plus a small hand-written table for the mines | Listing: raw. "Possible now": computed |
 | `get_crop_plan` | For a season: each crop's seed price and shop, days to grow, regrowth, sell price, harvests still possible if planted today, gold per day | `Data/Crops`, `Data/Objects`, today's shop stock | Fields: raw. Harvest count and gold per day: computed |
 | `get_recipes` | Cooking or crafting recipes: ingredients, whether known, what can be made now from the backpack and chests | `Data/CookingRecipes`, `Data/CraftingRecipes`, player records | Raw; "can make now" computed |
 | `get_machine_info` | What a machine accepts and produces, and how long it takes | `Data/Machines` | Raw where the data states the output |
@@ -52,7 +52,18 @@ All read-only. Each returns display names in the game's language plus stable IDs
 
 Known limits, found by reading the game's code, that each tool must handle honestly:
 
-- **Fish.** The game's own "which fish bites" functions cannot be called to answer questions: they roll dice on the game's shared random generator, return one fish, and need a bobber position and tackle. So "possible now" is our own check of the fixed conditions (season, hour, weather, level, area), using the game's condition evaluator for conditions written in the data. It reports "possible", never a chance. Mine floors, the farm types, the island and the railroad decide their fish in code; these come from a small table we write and check against the code. Maps added by other mods that do the same cannot be known, and the tool says so.
+- **Fish.** The game's own "which fish bites" functions cannot be called to answer questions: they roll dice on the game's shared random generator, return one fish, and need a bobber position and tackle. So "possible now" is our own check of the fixed conditions, in the order the game applies them:
+  - from the map's spawn rules (`Data/Locations`, plus the `Default` rules every map shares): season, fishing area, fishing level, distance from shore, catch limit, and the rule's condition, checked with the game's condition evaluator;
+  - from `Data/Fish`, unless the rule says to ignore it: hours, weather, fishing level.
+
+  It reports "possible", never a chance, and assumes no magic bait or training rod. Rules tied to a part of the map (an area, or bobber and player positions) are reported with that restriction instead of being guessed.
+
+  Where code decides, read from the 1.6.15 source:
+  - **Mines.** Stonefish, Ice Pip and Lava Eel (and Cave Jelly on the lava floors) are chosen in code by mine area, before the data rules. This is the one hand-written table: three areas, four items.
+  - **Farm.** Some farm types borrow another map's fish through a map property (`FarmFishLocationOverride`). The tool reads the property, so no table is needed.
+  - **Island and Railroad.** Their code only adds one-time special items (golden walnuts, a quest item), not fish. The tool ignores them; the spoiler rule would hide them anyway.
+  - **Fish ponds and fish frenzies** replace the catch at one spot. Not reported.
+  - Maps added by other mods that choose fish in their own code cannot be known. The tool's answer for a modded map says it shows data rules only.
 - **Machines.** Some outputs are decided by game code, not data (the data only names the function). The tool returns those as "decided by the game" with our note for the unmodded machines.
 - **Recipes.** How a recipe is learned is only partly in the recipe data (friendship and skill unlocks are; TV, mail and shop sources are elsewhere). The tool reports the source when the data has it and "source not in data" otherwise.
 - **Schedules.** Confirmed for the host's game only. Whether a co-op guest has other villagers' schedules loaded must be checked first; if not, the tool says it is unavailable for guests.
@@ -68,7 +79,7 @@ Not in this round: animal and building info, and a "how to get this item" index 
 
 ### Testing
 
-- The answer-check list from the main design grows: questions with known answers for unmodded 1.6.15 (where and when Catfish bites; days for Parsnip to grow; what a Keg makes from Hops; fish on mine floor 20). Every computed answer has at least one entry. Each tool is run against the list in the game.
+- The answer-check list from the main design grows: questions with known answers for unmodded 1.6.15 (where and when Catfish bites; days for Parsnip to grow; what a Keg makes from Hops; fish on mine floors 20, 60 and 100). Every computed answer has at least one entry. Each tool is run against the list in the game.
 - For fish, one experiment: fish a spot repeatedly and confirm every catch is in the tool's "possible now" list.
 - One run with a content mod that changes a crop, to show answers follow the modded data.
 
@@ -97,6 +108,8 @@ The mod is one .NET assembly; the same file runs on every system, and almost all
 Also found: on macOS the agent's two halves compute the config folder slightly differently. Both will use one shared function.
 
 ### Step 1: fix what reading the code already shows
+
+Status: implemented on Linux on 2026-11-15 (all four points); unit tests pass. Proof on Windows comes with step 2.
 
 - **Start pi without the `.cmd`.** The wrapper already finds pi's package folder. It reads the entry file from the package's own `bin` field and starts it with the same Node that runs the wrapper. The only program the mod starts is then `node`, a normal executable on every system.
 - **Direct start without the wrapper** (`Launcher.UseWrapper` off) is a development option. On Windows it is not supported; the mod says so instead of failing.

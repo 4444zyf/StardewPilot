@@ -1,11 +1,14 @@
 /**
  * Where the wrapper keeps its files, and the wrapper settings (no secrets).
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-/** Same folder the mod uses for bridge.json. */
+/**
+ * The folder shared with the mod (bridge.json, agent-status.json). Must match ConnectionFile.cs, which uses
+ * .NET's ApplicationData folder: %APPDATA% on Windows, $XDG_CONFIG_HOME or ~/.config on Linux and macOS (.NET 6).
+ */
 export function configDir(): string {
 	const base = process.platform === "win32"
 		? (process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"))
@@ -47,7 +50,20 @@ export function writePrivateFile(path: string, content: string): void {
 	} catch {
 		// Windows: modes are not supported; the profile folder is private already.
 	}
-	renameSync(tmp, path);
+	// Windows refuses to replace a file another process has open (the game reads the status file every second).
+	for (let attempt = 0; ; attempt++) {
+		try {
+			renameSync(tmp, path);
+			return;
+		} catch (err) {
+			const code = (err as NodeJS.ErrnoException).code;
+			if (attempt >= 20 || (code !== "EPERM" && code !== "EBUSY" && code !== "EACCES")) {
+				rmSync(tmp, { force: true });
+				throw err;
+			}
+			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25); // sleep 25 ms
+		}
+	}
 }
 
 export function ensurePrivateDir(path: string): void {

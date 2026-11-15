@@ -6,8 +6,10 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
 
 export interface PiInstall {
-	/** Command used to start pi. */
+	/** The pi command that was found (on Windows a .cmd shim, which cannot be started directly). */
 	command: string;
+	/** pi's JavaScript entry file, started with node. */
+	entry: string;
 	/** Folder of the @earendil-works/pi-coding-agent package. */
 	packageDir: string;
 	version: string;
@@ -54,6 +56,10 @@ export function locatePi(command = "pi"): PiInstall {
 	if (!found) throw new Error(`pi was not found ('${command}'). Install it with: npm install -g ${PACKAGE_NAME}`);
 	const packageDir = packageDirFrom(realpathSync(found));
 	if (!packageDir) throw new Error(`Found '${found}', but could not find the ${PACKAGE_NAME} package next to it.`);
-	const version = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")).version as string;
-	return { command: found, packageDir, version };
+	const pkg = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf8")) as { version: string; bin?: string | Record<string, string> };
+	const bin = typeof pkg.bin === "string" ? pkg.bin : (pkg.bin?.pi ?? Object.values(pkg.bin ?? {})[0]);
+	if (!bin) throw new Error(`The ${PACKAGE_NAME} package at ${packageDir} names no program to start.`);
+	const entry = join(packageDir, bin);
+	if (!existsSync(entry)) throw new Error(`pi's entry file is missing: ${entry}`);
+	return { command: found, packageDir, entry, version: pkg.version };
 }
