@@ -40,7 +40,7 @@ internal static class StateTools
         registry.Add(new ToolDef
         {
             Name = "get_location",
-            Description = "Describe a map: size, exits (warps and doors with their target maps), buildings, NPCs and players present, forage, machines and their output, chests and other notable objects. Defaults to the farmer's current map.",
+            Description = "Describe a map: size, exits (warps and doors with their target maps), buildings, NPCs and players present, forage, machines and their output, chests (including unopened gift boxes and their contents) and other objects. Defaults to the farmer's current map, so call it without arguments to see where the farmer is standing.",
             InputSchema = Schema.Object(
                 ("location", Schema.String("Map name such as Farm, Town, SeedShop, FarmHouse. Omit for the current map."), false),
                 ("includeObjects", Schema.Boolean("Include a list of every placed object with its tile (can be long). Default false."), false)),

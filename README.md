@@ -11,7 +11,7 @@ See [the design](docs/2026-11-15-agent-copilot-design.md) for the full plan.
 
 ## Status
 
-Step 1 of the build order (read-only bridge, chat in pi's terminal) works. The agent can read the game but cannot act yet.
+Steps 1 and 2 of the build order work: the read-only bridge, and the in-game guide (private chat overlay, proactive tips, instant warnings). The agent can read the game but cannot act yet.
 
 ## Requirements
 
@@ -39,6 +39,23 @@ Step 1 of the build order (read-only bridge, chat in pi's terminal) works. The a
    `--no-builtin-tools` keeps pi's shell and file tools off. The extension also enables only the Stardew tools, blocks every other tool call, and replaces pi's coding system prompt. Type `/stardew` to check the game connection.
 
 Ask things like "what should I do today?", "what does Abigail like?" or "which crops need water?".
+
+## In the game
+
+- **F8** opens the private copilot chat. Only you see it; it never goes to the shared co-op chat. In single-player the clock stops while the window is open and while the agent is thinking.
+- **Tips**: rule checks in the mod notice things worth saying (crops still dry in the evening, a birthday or festival today, rain tomorrow, low energy far from home). The agent words each tip in the game's language and it appears in the upper left. If no agent is connected, or it does not answer within 45 seconds, a fixed text is shown instead.
+- **Warnings** that must land before you act are shown at once as fixed text, without waiting for the model: a Community Center bundle item dropped in the shipping bin or sold to a shop, being out after midnight, energy almost gone.
+
+Settings in the mod's `config.json`:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `ChatKey` | `F8` | Opens the chat |
+| `Chattiness` | `Important` | `Off`, `Important` or `Talkative` |
+| `MaxTipsPerDay` | `6` | Proactive tips per game day (warnings do not count) |
+| `Warnings` | `true` | Instant fixed-text warnings |
+| `TellMeEverything` | `false` | Allow spoilers about content the save has not reached |
+| `PauseWhileThinking` | `true` | Single-player: stop the clock while the agent thinks |
 
 ## Tools (step 1)
 

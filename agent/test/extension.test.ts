@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createStardewPilot } from "../src/index.ts";
+import { createStardewPilot, tipPrompt } from "../src/index.ts";
 import { ReplayTransport } from "./fake-transport.ts";
 
 /** Minimal stand-in for pi's ExtensionAPI: records what the extension registers. */
@@ -9,6 +9,8 @@ function fakePi() {
 	const tools = new Map<string, any>();
 	let active: string[] = ["read", "bash", "edit", "write"]; // pretend pi's coding tools were on
 	const statuses: string[] = [];
+	const userMessages: Array<{ text: unknown; options?: any }> = [];
+	const customMessages: Array<{ message: any; options?: any }> = [];
 	const ctx = { ui: { setStatus: (_k: string, t: string) => statuses.push(t), notify: () => {} } };
 	const api = {
 		on(name: string, h: (event: any, ctx: any) => any) {
@@ -18,6 +20,12 @@ function fakePi() {
 			tools.set(def.name, def);
 		},
 		registerCommand() {},
+		sendUserMessage(text: unknown, options?: any) {
+			userMessages.push({ text, options });
+		},
+		sendMessage(message: any, options?: any) {
+			customMessages.push({ message, options });
+		},
 		setActiveTools(names: string[]) {
 			active = names;
 		},
@@ -27,7 +35,7 @@ function fakePi() {
 		for (const h of handlers.get(name) ?? []) last = await h(event, ctx);
 		return last;
 	}
-	return { api, tools, fire, statuses, get active() { return active; } };
+	return { api, tools, fire, statuses, userMessages, customMessages, get active() { return active; } };
 }
 
 test("registers bridge tools and leaves only Stardew tools active", async () => {
@@ -78,4 +86,75 @@ test("without a game, the prompt says so and tools report the error", async () =
 	assert.match(result.systemPrompt, /not connected/);
 	assert.match(result.systemPrompt, /Bridge not found/);
 	assert.ok(pi.statuses.some((s) => s.includes("not connected")));
+});
+
+async function connected() {
+	const pi = fakePi();
+	const transport = new ReplayTransport();
+	createStardewPilot(pi.api as any, async () => transport);
+	await pi.fire("session_start");
+	const sentToGame = () => transport.sent.filter((m) => m.id === undefined);
+	const push = (method: string, params: unknown) => transport.emit(JSON.stringify({ jsonrpc: "2.0", method, params }));
+	return { pi, transport, sentToGame, push };
+}
+
+test("in-game chat becomes a user message, and the answer goes back to the game", async () => {
+	const { pi, sentToGame, push } = await connected();
+	push("chat/user_message", { text: "What should I plant?" });
+	assert.deepEqual(pi.userMessages.map((m) => m.text), ["What should I plant?"]);
+	assert.equal(pi.userMessages[0].options, undefined, "idle agent starts a turn directly");
+
+	await pi.fire("agent_start");
+	// An intermediate step with a tool call is not forwarded.
+	await pi.fire("message_end", { message: { role: "assistant", content: [{ type: "text", text: "Let me check." }, { type: "toolCall", name: "get_inventory" }] } });
+	await pi.fire("message_end", { message: { role: "assistant", content: [{ type: "text", text: "Plant the parsnips." }] } });
+	await pi.fire("agent_settled", { aborted: false });
+
+	const replies = sentToGame().filter((m) => m.method === "chat/agent_message");
+	assert.deepEqual(replies.map((m) => m.params), [{ text: "Plant the parsnips.", kind: "reply" }]);
+	const statuses = sentToGame().filter((m) => m.method === "agent/status").map((m) => m.params.busy);
+	assert.deepEqual(statuses, [true, false]);
+});
+
+test("chat while the agent is busy is queued as a follow-up", async () => {
+	const { pi, push } = await connected();
+	await pi.fire("agent_start");
+	push("chat/user_message", { text: "And then?" });
+	assert.equal(pi.userMessages[0].options?.deliverAs, "followUp");
+});
+
+test("tip triggers are worded by the model and sent back as tips", async () => {
+	const { pi, sentToGame, push } = await connected();
+	push("tips/trigger", { kind: "rain-tomorrow", facts: { weatherTomorrow: "Rain" }, fallback: "Rain tomorrow.", gameLanguage: "de" });
+	assert.equal(pi.customMessages.length, 1);
+	assert.equal(pi.customMessages[0].options.triggerTurn, true);
+	assert.match(pi.customMessages[0].message.content, /Proactive tip/);
+	assert.match(pi.customMessages[0].message.content, /\(de\)/);
+
+	await pi.fire("agent_start");
+	await pi.fire("message_end", { message: { role: "assistant", content: [{ type: "text", text: "Morgen regnet es." }] } });
+	await pi.fire("agent_settled", { aborted: false });
+	const tips = sentToGame().filter((m) => m.method === "chat/agent_message");
+	assert.deepEqual(tips.map((m) => m.params), [{ text: "Morgen regnet es.", kind: "tip" }]);
+});
+
+test("tips arriving while busy wait until the agent settles", async () => {
+	const { pi, push } = await connected();
+	await pi.fire("agent_start");
+	push("tips/trigger", { kind: "festival-tomorrow", facts: {}, fallback: "Festival tomorrow." });
+	assert.equal(pi.customMessages.length, 0);
+	await pi.fire("agent_settled", { aborted: false });
+	assert.equal(pi.customMessages.length, 1);
+});
+
+test("warnings are kept as context without starting a turn", async () => {
+	const { pi, push } = await connected();
+	push("tips/warning", { kind: "late-midnight", text: "It's midnight." });
+	assert.equal(pi.customMessages[0].options.deliverAs, "nextTurn");
+	assert.equal(pi.customMessages[0].options.triggerTurn, undefined);
+});
+
+test("tip prompt falls back to the game language from settings", () => {
+	assert.match(tipPrompt({ kind: "x", fallback: "y" }, "fr"), /\(fr\)/);
+	assert.match(tipPrompt({ kind: "x", fallback: "y" }), /\(en\)/);
 });
