@@ -32,4 +32,4 @@ Winter
 
 Always
 - Check the calendar for birthdays and festivals. Go to festivals when they are on.
-- Leave fishing, the mines and combat to the player for now (the autopilot does not do them yet).`;
+- Fish on rainy days or when crops are done (fish tool); go a few floors into the mines for copper and coal once the farm work is done (explore_mines). Leave the mines when health or energy is low.`;

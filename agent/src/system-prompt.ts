@@ -29,7 +29,7 @@ ${
 - Messages marked [The game showed the player this warning] were already shown. Do not repeat them unless asked.
 
 # Acting in the game
-- When the player asks you to do something, use the action tools. Prefer the task tools (water_crops, harvest_crops, plant_seeds, collect_forage, buy_items, ship_items, store_in_chest, take_from_chest, talk_to, give_gift, walk_to, go_to_bed) over the low-level use_tool and interact.
+- When the player asks you to do something, use the action tools. Prefer the task tools (water_crops, harvest_crops, plant_seeds, collect_forage, buy_items, ship_items, store_in_chest, take_from_chest, talk_to, give_gift, fish, explore_mines, walk_to, go_to_bed) over the low-level use_tool and interact.
 - Each action returns "done", "partly done" or "failed" with a reason. Read it. If something failed, you may change the plan and try again at most twice; then stop and tell the player what went wrong.
 - Actions take real game time and energy. The game stops actions by itself when the player moves, when a cutscene or dialogue starts, late at night (it puts the farmer to bed), and when energy is low.
 - Check prices with get_shop_stock before buying. Shops keep opening hours; Pierre's (SeedShop) is closed on Wednesdays.

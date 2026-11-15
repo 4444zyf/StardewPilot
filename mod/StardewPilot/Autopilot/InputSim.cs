@@ -1,52 +1,31 @@
-using System.Collections.Generic;
+using Microsoft.Xna.Framework.Input;
 using StardewModdingAPI;
 using StardewValley;
 
 namespace StardewPilot.Autopilot;
 
 /// <summary>
-/// Presses buttons the way a player would, through SMAPI's input layer, so the game runs its normal input code
-/// (used for fishing, where casting, hooking and the minigame all read the tool button).
-/// SMAPI applies a pressed override for one tick, so held buttons are re-pressed every tick.
+/// Holds the tool button for the fishing minigame. The minigame reads the previous frame's keyboard
+/// state (Game1.oldKBState) to decide whether the button is held, so setting it before the game's update
+/// is the same as a player holding the key. Nothing else in the game is affected.
 /// </summary>
 internal static class InputSim
 {
-    private static readonly HashSet<SButton> Held = new();
-    private static IReflectedMethod? overrideButton;
+    /// <summary>Whether the tool button should read as held during the next update.</summary>
+    public static bool ToolHeld { get; set; }
 
-    public static void Init(IModHelper helper)
+    private static Keys ToolKey =>
+        Game1.options.useToolButton.Length > 0 && Game1.options.useToolButton[0].key != Keys.None ? Game1.options.useToolButton[0].key : Keys.C;
+
+    /// <summary>Called on UpdateTicking, before the game's update.</summary>
+    public static void BeforeGameUpdate()
     {
-        overrideButton = null;
-        try { overrideButton = helper.Reflection.GetMethod(Game1.input, "OverrideButton"); }
-        catch { /* not available: fishing reports it cannot run */ }
+        if (ToolHeld)
+            Game1.oldKBState = new KeyboardState(ToolKey);
     }
 
-    public static bool Available => overrideButton != null;
+    public static void ReleaseAll() => ToolHeld = false;
 
-    /// <summary>The player's tool button (the first keyboard binding).</summary>
-    public static SButton ToolButton => Game1.options.useToolButton.Length > 0 ? Game1.options.useToolButton[0].ToSButton() : SButton.C;
-
-    public static void Hold(SButton button) => Held.Add(button);
-
-    public static void Release(SButton button) => Held.Remove(button);
-
-    public static void ReleaseAll() => Held.Clear();
-
-    /// <summary>Whether a button press came from us (so it does not count as the player taking control).</summary>
-    public static bool IsSimulated(SButton button) => Held.Contains(button) || recentlyReleased.Contains(button);
-
-    private static readonly HashSet<SButton> recentlyReleased = new();
-
-    /// <summary>Called every update tick: keep held buttons down for the next tick.</summary>
-    public static void Tick()
-    {
-        recentlyReleased.Clear();
-        if (overrideButton == null)
-            return;
-        foreach (SButton b in Held)
-        {
-            overrideButton.Invoke(b, true);
-            recentlyReleased.Add(b);
-        }
-    }
+    /// <summary>Presses we simulate never reach SMAPI's input events, so nothing is mistaken for the player.</summary>
+    public static bool IsSimulated(SButton button) => false;
 }

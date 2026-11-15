@@ -11,7 +11,7 @@ See [the design](docs/2026-11-15-agent-copilot-design.md) for the full plan.
 
 ## Status
 
-Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (private chat overlay, proactive tips, instant warnings), the commanded autopilot (the agent walks the farmer between maps and runs tasks such as planting, watering, shopping and shipping when you ask), and self-play toward a goal you set. Fishing, the mines and combat are still left to the player (step 5).
+Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (private chat overlay, proactive tips, instant warnings), the commanded autopilot (the agent walks the farmer between maps and runs tasks such as planting, watering, shopping and shipping when you ask), and self-play toward a goal you set. From step 5: fishing (including the minigame), a basic mines-and-combat routine, and a one-click launcher. A public release (Nexus or similar) has not been made.
 
 ## Requirements
 
@@ -30,7 +30,7 @@ Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (p
 
 2. Start the game with SMAPI. The SMAPI console shows `Bridge listening on 127.0.0.1:45781`. On first run the mod writes a random token into its `config.json`, and writes the port and token to a connection file readable only by you (`~/.config/StardewPilot/bridge.json`, or `%APPDATA%\StardewPilot\bridge.json` on Windows).
 
-3. Start the agent from the repo root:
+3. Start the agent. Either let the mod start it (set `Launcher.Enabled` to `true` in the mod's `config.json`; the extension ships inside the mod folder), or start it yourself from the repo root:
 
    ```sh
    pi --no-builtin-tools -e ./agent/src/index.ts
@@ -71,6 +71,9 @@ Settings in the mod's `config.json`:
 | `SelfPlay.ToggleKey` | `F10` | Starts or stops self-play |
 | `SelfPlay.DailyRequestBudget` | `120` | Model requests per game day (0 for no limit) |
 | `SelfPlay.DailyTokenBudget` | `0` | Model tokens per game day (0 for no limit) |
+| `Launcher.Enabled` | `false` | Start pi together with the game (one-click) |
+| `Launcher.PiCommand` | `pi` | The pi executable |
+| `Launcher.Model` | empty | Optional model for the launched agent, for example `openai/gpt-5` |
 
 ## Tools
 
@@ -102,6 +105,8 @@ Actions (each returns done, partly done or failed, with a reason):
 | `ship_items` | Puts items in the shipping bin (asks first; keeps one of any bundle item) |
 | `store_in_chest`, `take_from_chest` | Moves items between the backpack and a chest |
 | `talk_to`, `give_gift` | Talks to or gifts a villager (gifting asks first) |
+| `fish` | Finds open water, casts, strikes and plays the fishing minigame |
+| `explore_mines` | Goes down mine floors: takes ladders, breaks rocks to find them, fights monsters next to the farmer; stops at low health or energy |
 | `go_to_bed` | Walks home and sleeps |
 | `use_tool`, `interact` | Low-level fallbacks on one tile |
 | `stop_autopilot` | Stops the current action |
@@ -113,7 +118,8 @@ The bridge speaks JSON-RPC with MCP method names (`initialize`, `tools/list`, `t
 ## Development
 
 - `cd agent && npm install && npm test`: tests the extension offline against recorded bridge messages (`agent/test/fixtures`).
-- `scripts/restart-game.sh`: rebuilds the mod and restarts the game through Steam (Linux).
+- `scripts/restart-game.sh`: rebuilds the mod and restarts the game (Linux; starts SMAPI directly, so Steam need not run).
+- A release build (`dotnet build mod/StardewPilot -c Release`) also writes an installable zip next to the DLL.
 - Dev options in the mod's `config.json`: `Dev.AutoLoadSave` (a save folder name to load at the title screen) and `Dev.FreezeTime`.
 
 ## License

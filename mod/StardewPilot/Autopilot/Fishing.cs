@@ -12,7 +12,7 @@ using StardewValley.Tools;
 namespace StardewPilot.Autopilot;
 
 /// <summary>
-/// Fishing controller. Everything goes through the tool button, pressed via <see cref="InputSim"/>:
+/// Fishing controller, using the game's own rod functions (the same calls a player's clicks make):
 /// hold to charge the cast, release to cast, press when a fish nibbles, then play the minigame by
 /// holding the button whenever the fish is above the green bar.
 /// </summary>
@@ -20,8 +20,6 @@ internal static class Fishing
 {
     public static IEnumerable Fish(JobContext ctx, ModConfig cfg, string? location, int catches)
     {
-        if (!InputSim.Available)
-            throw JobContext.Fail("Fishing needs SMAPI's input layer, which is not available in this SMAPI version.");
         FishingRod rod = Actions.FindTool<FishingRod>() ?? throw JobContext.Fail("There is no fishing rod in the backpack.");
         GameLocation loc = StateTools.ResolveLocation(location);
         foreach (object? s in Navigation.WalkTo(ctx, loc.NameOrUniqueName, null))
@@ -31,7 +29,8 @@ internal static class Fishing
 
         List<(Point stand, int dir)> spots = FindSpots(loc);
         if (spots.Count == 0)
-            throw JobContext.Fail($"No open water to fish from in {loc.DisplayName}.");
+            throw JobContext.Fail($"No open water to fish from in {loc.DisplayName} ({DebugInfo}).");
+        ctx.Log($"fishing spots: {string.Join(", ", spots.Take(5).Select(sp => $"({sp.stand.X},{sp.stand.Y}) dir {sp.dir}"))}");
 
         var caught = new List<string>();
         int spotIndex = 0, misses = 0;
@@ -65,13 +64,17 @@ internal static class Fishing
             Game1.player.CurrentToolIndex = Game1.player.Items.IndexOf(rod);
             var before = Game1.player.Items.Where(i => i != null).GroupBy(i => i.QualifiedItemId).ToDictionary(g => g.Key, g => g.Sum(i => i.Stack));
 
-            // Cast: hold to charge to full power, then let go.
+            // Cast the way the game does when the tool button is pressed and let go at once (a short cast).
             ctx.ExpectingMenu = true;
             ctx.Progress("casting");
-            InputSim.Hold(InputSim.ToolButton);
-            for (int i = 0; i < 90 && !(rod.castingPower >= 0.95f); i++) { ctx.Touch(); yield return null; }
-            InputSim.Release(InputSim.ToolButton);
+            Game1.player.lastClick = Vector2.Zero;
+            Game1.player.BeginUsingTool();
+            // Release at full charge (about four tiles out), so it lands past the shallow edge.
+            // The game casts on the next tick (no button is held), so the power is set in this same tick.
+            rod.castingPower = 1f;
+            ctx.Log($"cast started: timing={rod.isTimingCast}");
             for (int i = 0; i < 300 && !rod.isFishing; i++) { ctx.Touch(); yield return null; }
+            ctx.Log($"cast from ({Game1.player.TilePoint.X},{Game1.player.TilePoint.Y}) facing {Game1.player.FacingDirection}: fishing={rod.isFishing} timing={rod.isTimingCast} casting={rod.isCasting} inAir={rod.castedButBobberStillInAir} usingTool={Game1.player.UsingTool} tool={Game1.player.CurrentTool?.Name}");
             if (!rod.isFishing)
             {
                 // The bobber did not land in fishable water: try the next spot.
@@ -85,34 +88,44 @@ internal static class Fishing
             for (int i = 0; i < 60 * 60 && !rod.isNibbling && rod.isFishing; i++) { ctx.Touch(); yield return null; }
             if (!rod.isNibbling)
             {
-                Tap(); // reel in and try again
+                Reel(rod); // reel in and try again
                 foreach (object? s in WaitForFarmerFree(ctx)) yield return s;
                 misses++;
                 continue;
             }
-            Tap();
-            yield return null;
-            yield return null;
+            Reel(rod); // strike: the same call a click makes while a fish nibbles
+            // The strike animation runs before the minigame (or the catch, for trash) appears.
+            for (int i = 0; i < 180 && !(Game1.activeClickableMenu is BobberBar || rod.isReeling || rod.fishCaught || rod.pullingOutOfWater || rod.showingTreasure); i++)
+            {
+                ctx.Touch();
+                yield return null;
+            }
 
             // The minigame (no minigame for trash: it comes straight out).
+            float lastDistance = -1;
+            bool hadMinigame = false;
             for (int i = 0; i < 60 * 60 && (Game1.activeClickableMenu is BobberBar || rod.isReeling); i++)
             {
                 ctx.Touch();
                 if (Game1.activeClickableMenu is BobberBar bar)
                 {
+                    hadMinigame = true;
+                    lastDistance = bar.distanceFromCatching;
                     float fish = bar.bobberPosition + 16f;
                     float barCenter = bar.bobberBarPos + bar.bobberBarHeight / 2f;
                     float predicted = barCenter + bar.bobberBarSpeed * 8f;
-                    if (fish < predicted) InputSim.Hold(InputSim.ToolButton);
-                    else InputSim.Release(InputSim.ToolButton);
+                    InputSim.ToolHeld = fish < predicted;
                 }
                 yield return null;
             }
-            InputSim.Release(InputSim.ToolButton);
+            InputSim.ToolHeld = false;
+            ctx.Log($"bite: minigame={hadMinigame} lastProgress={lastDistance:0.00} caught={rod.fishCaught}");
 
-            // Treasure chest: take everything.
-            for (int i = 0; i < 120; i++)
+            // After the minigame the fish is pulled out and held up; a click puts it away. Treasure opens a chest menu.
+            int holding = 0;
+            for (int i = 0; i < 600; i++)
             {
+                ctx.Touch();
                 if (Game1.activeClickableMenu is ItemGrabMenu grab)
                 {
                     foreach (Item item in grab.ItemsToGrabMenu.actualInventory.Where(x => x != null).ToList())
@@ -121,14 +134,16 @@ internal static class Fishing
                             grab.ItemsToGrabMenu.actualInventory.Remove(item);
                     }
                     grab.exitThisMenu();
+                }
+                else if (rod.fishCaught)
+                {
+                    if (++holding == 40)
+                        rod.doneHoldingFish(Game1.player);
+                }
+                else if (i > 90 && !rod.pullingOutOfWater && !rod.showingTreasure && !rod.isReeling && Game1.activeClickableMenu == null)
+                {
                     break;
                 }
-                if (!rod.fishCaught && !rod.showingTreasure && Game1.activeClickableMenu == null && !rod.pullingOutOfWater)
-                    break;
-                // Holding up the fish: one press puts it away.
-                if (rod.fishCaught && i > 30 && i % 30 == 0)
-                    Tap();
-                ctx.Touch();
                 yield return null;
             }
             foreach (object? s in WaitForFarmerFree(ctx)) yield return s;
@@ -155,20 +170,11 @@ internal static class Fishing
             ctx.Problems.Add($"Caught {caught.Count} of {catches}; the fish got away or no spot worked.");
     }
 
-    private static void Tap()
+    /// <summary>What the game does when the player clicks while the line is out: strike if a fish nibbles, else reel in.</summary>
+    private static void Reel(FishingRod rod)
     {
-        // Pressed for one tick: SMAPI applies the override on the next update.
-        InputSim.Hold(InputSim.ToolButton);
-        DelayedRelease = 2;
-    }
-
-    /// <summary>Ticks until a tapped button is let go. Driven by <see cref="TickTap"/>.</summary>
-    private static int DelayedRelease;
-
-    public static void TickTap()
-    {
-        if (DelayedRelease > 0 && --DelayedRelease == 0)
-            InputSim.Release(InputSim.ToolButton);
+        Farmer p = Game1.player;
+        rod.DoFunction(p.currentLocation, (int)p.lastClick.X, (int)p.lastClick.Y, 1, p);
     }
 
     private static IEnumerable WaitForFarmerFree(JobContext ctx)
@@ -181,7 +187,9 @@ internal static class Fishing
         Actions.ReleaseFarmer();
     }
 
-    /// <summary>Land tiles next to open water, with the direction to face. Open water: four fishable tiles in a row.</summary>
+    public static string DebugInfo = "";
+
+    /// <summary>Land tiles next to open water, with the direction to face. Open water: four water tiles in a row, fishable from the third (a full cast lands about four tiles out).</summary>
     private static List<(Point stand, int dir)> FindSpots(GameLocation loc)
     {
         int w = loc.Map.Layers[0].LayerWidth, h = loc.Map.Layers[0].LayerHeight;
@@ -192,17 +200,21 @@ internal static class Fishing
         {
             for (int y = 1; y < h - 1; y++)
             {
-                if (loc.isWaterTile(x, y) || !loc.isTilePassable(new Vector2(x, y)))
+                if (loc.isWaterTile(x, y) || !Navigation.IsWalkable(loc, new Point(x, y)))
                     continue;
                 foreach (var (dx, dy, dir) in dirs)
                 {
                     bool open = true;
                     for (int k = 1; k <= 4 && open; k++)
-                        open = loc.isWaterTile(x + dx * k, y + dy * k) && loc.isTileFishable(x + dx * k, y + dy * k);
+                        open = loc.isWaterTile(x + dx * k, y + dy * k) && (k < 3 || loc.isTileFishable(x + dx * k, y + dy * k));
                     if (open) { spots.Add((new Point(x, y), dir)); break; }
                 }
             }
         }
-        return spots.OrderBy(s => Math.Abs(s.Item1.X - me.X) + Math.Abs(s.Item1.Y - me.Y)).Take(12).ToList();
+        // Keep the nearest spots the farmer can actually walk to (rivers have two banks).
+        HashSet<Point> reachable = Navigation.ReachableTiles(loc);
+        DebugInfo = $"{spots.Count} shore spots, none reachable from ({me.X},{me.Y})";
+        return spots.Where(s => reachable.Contains(s.Item1))
+            .OrderBy(s => Math.Abs(s.Item1.X - me.X) + Math.Abs(s.Item1.Y - me.Y)).Take(6).ToList();
     }
 }

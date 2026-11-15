@@ -189,8 +189,29 @@ internal static class Navigation
         loc.objects.TryGetValue(new Vector2(tile.X, tile.Y), out StardewValley.Object obj)
         && (obj.IsWeeds() || obj.IsBreakableStone() || obj.IsTwig());
 
-    private static bool IsWalkable(GameLocation loc, Point t) =>
+    public static bool IsWalkable(GameLocation loc, Point t) =>
         !loc.isCollidingPosition(new Rectangle(t.X * 64 + 1, t.Y * 64 + 1, 62, 62), Game1.viewport, isFarmer: true, 0, glider: false, Game1.player, pathfinding: true);
+
+    /// <summary>Every tile the farmer can walk to from where they stand (flood fill).</summary>
+    public static HashSet<Point> ReachableTiles(GameLocation loc)
+    {
+        int w = loc.Map.Layers[0].LayerWidth, h = loc.Map.Layers[0].LayerHeight;
+        var seen = new HashSet<Point> { Game1.player.TilePoint };
+        var queue = new Queue<Point>(seen);
+        while (queue.Count > 0)
+        {
+            Point p = queue.Dequeue();
+            foreach (var d in new[] { new Point(0, -1), new Point(1, 0), new Point(0, 1), new Point(-1, 0) })
+            {
+                var n = new Point(p.X + d.X, p.Y + d.Y);
+                if (n.X < 0 || n.Y < 0 || n.X >= w || n.Y >= h || seen.Contains(n) || !IsWalkable(loc, n))
+                    continue;
+                seen.Add(n);
+                queue.Enqueue(n);
+            }
+        }
+        return seen;
+    }
 
     /// <summary>A* where clearable debris is passable at extra cost. Returns the tiles to walk, start excluded.</summary>
     public static List<Point>? PathThroughDebris(GameLocation loc, Point start, Point target, bool adjacent)

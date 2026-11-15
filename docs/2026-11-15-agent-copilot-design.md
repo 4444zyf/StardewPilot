@@ -1,7 +1,7 @@
 # Agent copilot: design
 
 Date: 2026-11-15
-Status: agreed in design interview, revised after review the same day; development environment ready; nothing built yet
+Status: agreed in design interview, revised after review the same day. Steps 1–4 built and tested in-game; step 5 partly built (fishing, basic mines and combat, one-click launcher); no public release yet
 
 ## What it is
 
@@ -119,4 +119,8 @@ Set up and checked on 2026-11-15. A test mod built against the installed game an
 - SMAPI does not sandbox mods. It logs file and process access but blocks nothing, and has no rule against network access.
 - Similar projects bridge a SMAPI mod over a socket: stardew-mcp (WebSocket, about 12 tools), StardewWebApi (HTTP and WebSocket).
 - StarDojo (NeurIPS 2025) benchmarked agents on 1,000 Stardew tasks. The best model completed 12.7%, and pausing the game while the model thinks mattered for results. This is the main reason for macros over step-by-step control and for structured state over screenshots.
-- The game's `PathFindController` is the expected way to walk the farmer within one map. This is from memory, not current docs: verify against the decompiled 1.6 source before relying on it. Travel between maps is not covered by it (see build step 3).
+- Verified against the decompiled 1.6.15 source and in-game: `PathFindController` walks the farmer within one map, and because it moves the farmer through `Farmer.MovePosition`, walking into a map-edge warp triggers the game's own warp. Its own warp handling is written for NPCs, so cross-map travel uses our route planner over warps and doors; doors are opened with the game's action code, which also enforces shop hours.
+- Verified: a co-op guest's view of a map is live when the map is "always active" or a player is on it; the state tools flag other maps as possibly stale.
+- New farms are full of weeds, stones and twigs that the game's pathfinder treats as walls; the autopilot clears a way through them with tools, as a player would.
+- SMAPI blocks mods from reflecting into its internals (so no simulated button presses through SMAPI). The fishing controller uses the rod's own functions, and holds the tool button for the minigame by setting the keyboard state the minigame reads.
+- Still unconfirmed: whether pi's `/login` covers a ChatGPT/Codex subscription (needs an interactive login by the owner).

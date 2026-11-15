@@ -63,7 +63,7 @@ public sealed class ModEntry : Mod
                 Toast.Show(entry);
         };
 
-        helper.Events.GameLoop.GameLaunched += (_, _) => InputSim.Init(helper);
+        helper.Events.GameLoop.UpdateTicking += (_, _) => InputSim.BeforeGameUpdate();
         helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
         helper.Events.GameLoop.UpdateTicked += this.OnUpdateTicked;
         helper.Events.GameLoop.SaveLoaded += (_, _) => this.Notify("save_loaded");
@@ -160,8 +160,6 @@ public sealed class ModEntry : Mod
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
     {
         MainThread.Drain();
-        InputSim.Tick();
-        Fishing.TickTap();
         if (Game1.eventUp || Game1.activeClickableMenu != null)
             this.lastBusyScreenTick = Game1.ticks;
 
@@ -245,7 +243,7 @@ public sealed class ModEntry : Mod
             this.Helper.Input.Suppress(e.Button);
             return;
         }
-        if ((this.runner!.IsRunning || this.selfPlay.Enabled) && !InputSim.IsSimulated(e.Button) && IsTakeControlInput(e.Button))
+        if ((this.runner!.IsRunning || this.selfPlay.Enabled) && IsTakeControlInput(e.Button))
         {
             this.runner.Stop(JobOutcome.Partial, "The player took control, so the autopilot stopped.");
             if (this.selfPlay.Enabled)
@@ -283,6 +281,7 @@ public sealed class ModEntry : Mod
     {
         if (string.IsNullOrWhiteSpace(text))
             return;
+        text = PlainText(text);
         if (kind == "tip")
         {
             if (this.pendingTips.Count > 0)
@@ -293,6 +292,14 @@ public sealed class ModEntry : Mod
         {
             ChatLog.Add(ChatSender.Agent, text);
         }
+    }
+
+    /// <summary>The game's fonts have no bold or headings: drop markdown markers the model may use.</summary>
+    private static string PlainText(string text)
+    {
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"(\*\*|__|`)", "");
+        text = System.Text.RegularExpressions.Regex.Replace(text, @"^#{1,6}\s*", "", System.Text.RegularExpressions.RegexOptions.Multiline);
+        return text;
     }
 
     private void DeliverTip(TipTrigger tip)

@@ -67,12 +67,8 @@ internal static class Mining
             {
                 p.CurrentToolIndex = p.Items.IndexOf(weapon);
                 Actions.Face(close.TilePoint);
-                ctx.ExpectingMenu = true;
-                InputSim.Hold(InputSim.ToolButton);
-                yield return new WaitTicks(2);
-                InputSim.Release(InputSim.ToolButton);
-                for (int i = 0; i < 40 && p.UsingTool; i++) { ctx.Touch(); yield return null; }
-                ctx.ExpectingMenu = false;
+                foreach (object? st in Actions.UseTool(ctx, cfg, weapon, close.TilePoint))
+                    yield return st;
                 monstersHit++;
                 ctx.Progress($"fighting on floor {shaft.mineLevel}");
                 continue;
