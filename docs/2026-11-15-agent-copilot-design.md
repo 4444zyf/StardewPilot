@@ -1,7 +1,7 @@
 # Agent copilot: design
 
 Date: 2026-11-15
-Status: agreed in design interview, revised after review the same day; nothing built yet
+Status: agreed in design interview, revised after review the same day; development environment ready; nothing built yet
 
 ## What it is
 
@@ -21,7 +21,7 @@ pi cannot run inside the game, which is why there are two processes. During deve
 
 The bridge is our own code. Its schema stays MCP-compatible so pi is not a lock-in.
 
-**The agent gets Stardew tools only.** pi is a coding agent and ships with shell and file-editing tools. These must be switched off, and its coding system prompt replaced, before the agent is connected to a game. How pi disables built-in tools is not yet checked; confirm it in step 1, and do not run the agent against a co-op game until it is confirmed.
+**The agent gets Stardew tools only.** pi is a coding agent and ships with shell and file-editing tools. These must be switched off, and its coding system prompt replaced, before the agent is connected to a game. pi 1.5.2 supports this with `--no-tools` and a `--tools <names>` allowlist, so the agent runs with only the Stardew tools enabled. Replacing the system prompt is still to be checked in step 1.
 
 Text that comes from the game (other players' chat, farm and player names, text added by other mods) is treated as data, never as instructions.
 
@@ -42,6 +42,8 @@ Order of preference:
 3. Local models (Ollama, llama.cpp) through pi's `models.json`.
 
 Develop against a strong cloud model first, so model weakness does not hide design problems.
+
+**Test provider (development):** Alibaba Cloud Model Studio token plan, Beijing region, OpenAI-compatible endpoint `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`. It is configured in pi as provider `qwen-token-plan`, with `qwen3.8-max` as the default model. Checked on 2026-11-15: qwen3.8-max and qwen3.8-flash both make correct tool calls in roughly 5–7 seconds. The API key lives outside the repo, in a file readable only by its owner, and pi reads it at request time.
 
 ## Guide behaviour
 
@@ -90,6 +92,7 @@ Each step is usable by itself.
 
 ## Testing
 
+- On the development VM, in-game tests run on the VNC desktop (`DISPLAY=:1`), so they can be scripted over SSH and watched over VNC.
 - Bridge and macros are tested in the running game against a small set of fixed test saves (for example: day 1 of spring, a mid-summer farm with crops and chests, a co-op farm). Each macro has a scripted check: load the save, run the macro, compare the resulting state.
 - The pi extension is tested without the game against recorded bridge messages.
 - Guide answers are spot-checked against a list of questions with known answers taken from the game's data (prices, seasons, gift tastes, bundle contents).
@@ -98,15 +101,18 @@ Each step is usable by itself.
 
 - One repository holding both halves: the C# mod and the TypeScript pi extension.
 - MIT licence. No code may be copied from GPL projects such as Stardew Access.
-- Local git only; nothing is pushed until the owner says so.
+- Public GitHub repository (`4444zyf/StardewPilot`, default branch `main`). Changes are pushed only when the owner says so.
+- No secrets in the repo: API keys stay in files outside it, and SMAPI's generated `config.json` (which will hold the bridge token) is git-ignored.
 
-## Needed before step 1
+## Development environment
 
-Checked on the development machine on 2026-11-15: Node 22 is installed; the rest is missing.
+Set up and checked on 2026-11-15. A test mod built against the installed game and loaded in it.
 
-- Stardew Valley (PC version) and SMAPI 4.5+
-- .NET 6 SDK
-- pi
+- Ubuntu 24.04 VM with no GPU (software OpenGL) and no audio device, 6 cores, about 6 GB RAM.
+- Stardew Valley 1.6.15 (Linux, Steam) with SMAPI 4.5.2. The game runs on an XFCE desktop over VNC (display `:1`, localhost only, reached through an SSH tunnel). Steam must be running to start it.
+- .NET SDK 10, building mods that target .NET 6. `Pathoschild.Stardew.ModBuildConfig` finds the game folder by itself and copies the built mod into `Mods/`.
+- Node 22.23 and pi 1.5.2, using the test provider described under Model access.
+- RAM is the tight resource: game, Steam, a build and pi together leave little headroom. Close Steam's other windows while testing.
 
 ## Background facts
 
