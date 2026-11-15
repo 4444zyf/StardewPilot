@@ -44,6 +44,12 @@ public sealed class ModEntry : Mod
 
         this.tools = new ToolRegistry(this.Monitor);
         StateTools.Register(this.tools, () => this.ModManifest.Version.ToString());
+        this.tools.Add(FishKnowledge.Tool());
+        this.tools.Add(CropKnowledge.Tool());
+        this.tools.Add(RecipeKnowledge.Tool());
+        this.tools.Add(MachineKnowledge.Tool());
+        this.tools.Add(CollectionKnowledge.Tool());
+        this.tools.Add(ScheduleKnowledge.Tool());
         this.runner = new JobRunner(this.Monitor, () => this.config);
         Navigation.Config = () => this.config;
         ActionTools.Register(this.tools, this.runner, new Macros(() => this.config, helper));
@@ -72,6 +78,19 @@ public sealed class ModEntry : Mod
             if (!AgentState.Connected && WrapperStatus.Current.State is "needs_setup" or "error")
                 Toast.Show(new ChatEntry(ChatSender.System, WrapperStatus.NotConnectedHint() + " (F8 opens the chat)", DateTime.Now));
         };
+        helper.ConsoleCommands.Add("pilot_diagnose", "Print a self-check of StardewPilot (versions, Node, pi, wrapper, bridge) to paste into a bug report. Contains no keys, tokens or links.", (_, _) =>
+            this.Monitor.Log("\n" + Platform.Diagnostics.Build(new Platform.DiagnoseInfo(
+                this.ModManifest.Version.ToString(),
+                Game1.version,
+                Constants.ApiVersion.ToString(),
+                this.config.Launcher.Enabled,
+                this.config.Launcher.UseWrapper,
+                this.config.Launcher.NodeCommand,
+                this.config.Launcher.PiCommand,
+                this.config.Launcher.ExtensionPath.Length > 0 ? this.config.Launcher.ExtensionPath : System.IO.Path.Combine(helper.DirectoryPath, "agent", "src", "index.ts"),
+                this.bridge?.Url ?? "(not started)",
+                this.bridge?.ClientCount ?? 0,
+                new[] { this.config.Token })), LogLevel.Info));
         helper.ConsoleCommands.Add("pilot_settings", "Open the StardewPilot copilot settings page in the browser.", (_, _) =>
             this.Monitor.Log(WrapperStatus.OpenSettings(this.Monitor), LogLevel.Info));
         helper.Events.GameLoop.DayStarted += (_, _) =>
@@ -150,8 +169,8 @@ public sealed class ModEntry : Mod
             });
             this.bridge.Start();
 
-            ConnectionFile.Write(this.config.Port, this.config.Token, Game1.version, this.ModManifest.Version.ToString());
-            this.Monitor.Log($"Bridge listening on 127.0.0.1:{this.config.Port}. Connection details: {ConnectionFile.FilePath}", LogLevel.Info);
+            ConnectionFile.Write(this.bridge.Url, this.config.Port, this.config.Token, Game1.version, this.ModManifest.Version.ToString());
+            this.Monitor.Log($"Bridge listening on {this.bridge.Url.Replace("ws://", "").TrimEnd('/')}. Connection details: {ConnectionFile.FilePath}", LogLevel.Info);
             if (this.config.Launcher.Enabled)
             {
                 this.launcher = new AgentLauncher(this.Monitor);
@@ -310,6 +329,8 @@ public sealed class ModEntry : Mod
     private static string PlainText(string text)
     {
         text = System.Text.RegularExpressions.Regex.Replace(text, @"(\*\*|__|`)", "");
+        // The game's fonts lack typographic dashes and quotes; they would show as other glyphs.
+        text = text.Replace('\u2013', '-').Replace('\u2014', '-').Replace('\u2018', '\'').Replace('\u2019', '\'').Replace('\u201C', '"').Replace('\u201D', '"').Replace('\u2026', '.');
         text = System.Text.RegularExpressions.Regex.Replace(text, @"^#{1,6}\s*", "", System.Text.RegularExpressions.RegexOptions.Multiline);
         return text;
     }

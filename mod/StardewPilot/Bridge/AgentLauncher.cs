@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using StardewModdingAPI;
+using StardewPilot.Platform;
 
 namespace StardewPilot.Bridge;
 
@@ -24,43 +25,15 @@ internal sealed class AgentLauncher : IDisposable
         if (this.IsRunning)
             return;
         string extension = cfg.ExtensionPath.Length > 0 ? cfg.ExtensionPath : Path.Combine(modFolder, "agent", "src", "index.ts");
-        if (!File.Exists(extension))
+        var (info, error, useWrapper) = AgentStart.Build(new AgentLaunchOptions(cfg.UseWrapper, cfg.NodeCommand, cfg.PiCommand, extension, cfg.Model));
+        if (info == null)
         {
-            this.monitor.Log($"Launcher: the pi extension was not found at {extension}. Set Launcher.ExtensionPath in config.json.", LogLevel.Error);
+            this.monitor.Log($"Launcher: {error}", LogLevel.Error);
             return;
         }
-
-        // With the wrapper: node <agent>/src/wrapper/main.ts run. It runs pi and serves the settings page.
-        string wrapper = Path.Combine(Path.GetDirectoryName(extension)!, "wrapper", "main.ts");
-        bool useWrapper = cfg.UseWrapper && File.Exists(wrapper);
         if (cfg.UseWrapper && !useWrapper)
-            this.monitor.Log($"Launcher: the wrapper was not found at {wrapper}; starting pi directly.", LogLevel.Warn);
-        if (!useWrapper && OperatingSystem.IsWindows())
-        {
-            // On Windows `pi` is a .cmd script, which cannot be started directly. The wrapper starts pi through node instead.
-            this.monitor.Log("Launcher: starting pi without the wrapper is not supported on Windows. Set Launcher.UseWrapper to true, or start pi yourself in a terminal.", LogLevel.Error);
-            return;
-        }
-        this.command = useWrapper ? cfg.NodeCommand : cfg.PiCommand;
-
-        var info = new ProcessStartInfo(this.command)
-        {
-            RedirectStandardInput = true, // the child exits when stdin closes; keeping it open keeps it running
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            WorkingDirectory = Path.GetDirectoryName(extension)!,
-        };
-        string[] args = useWrapper
-            ? new[] { wrapper, "run", "--pi", cfg.PiCommand, "--extension", extension }
-            : new[] { "--mode", "rpc", "--no-builtin-tools", "-e", extension };
-        foreach (string arg in args)
-            info.ArgumentList.Add(arg);
-        if (cfg.Model.Length > 0)
-        {
-            info.ArgumentList.Add("--model");
-            info.ArgumentList.Add(cfg.Model);
-        }
+            this.monitor.Log("Launcher: the wrapper was not found next to the extension; starting pi directly.", LogLevel.Warn);
+        this.command = info.FileName;
 
         try
         {

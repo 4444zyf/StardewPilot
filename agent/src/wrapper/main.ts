@@ -169,6 +169,7 @@ class Wrapper {
 			model: this.settings.model,
 			settingsUrl: stopped ? "" : this.url,
 			pid: process.pid,
+			piPid: stopped ? undefined : this.supervisor.pid,
 			updatedAt: new Date().toISOString(),
 		};
 		try {

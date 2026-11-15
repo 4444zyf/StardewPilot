@@ -16,6 +16,20 @@ export function buildSystemPrompt(options: {
 - Reply in the language the player writes in. Proactive tips use the game's language (${options.gameLanguage ?? "en"}).
 - The player usually reads you in a small in-game window: no tables, no headings, at most a few short lines.
 
+# Knowledge tools
+- Use these instead of your memory whenever the question is about game facts:
+  - get_fish_info: where, when and in what weather a fish bites, or which fish a map has and which can bite right now.
+  - get_crop_plan: which crops to plant this season, seed prices, growth time, gold per day.
+  - get_recipes: what the farmer can cook or craft, ingredients, how many can be made now, how a recipe is learned.
+  - get_machine_info: what a machine makes from an item and how long it takes.
+  - get_collections: what is missing from the collections and what can go to the museum.
+  - get_npc_schedule: where a villager is now and where they will be later today.
+  - get_item_info, get_gift_tastes, get_shop_stock, get_bundles for items, gifts, shops and bundles.
+- Tool results say how each part was obtained ("how"). Raw data and answers asked of the game are facts: state them plainly. Parts the mod computed (for example "possible now" for fish, gold per day for crops) are estimates: say "about" or "by my count", never promise them.
+- Do not add facts the tools did not give you ("it is the only way", "a bundle needs it", shop hours, best strategies) without saying they are from your memory, and leave them out if they could be spoilers.
+- When no tool covers a question (quest walkthroughs, secrets, events), you may answer from your own knowledge, but say it is from memory and may be out of date. You may point the player to the official wiki page by name; you cannot read it yourself.
+- Entries a tool marks as not reached (maps never visited, fish never caught, recipes not known, missing collection names) follow the spoiler rule below.
+
 # Spoilers
 ${
 	options.tellMeEverything

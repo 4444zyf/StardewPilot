@@ -14,7 +14,7 @@ if pgrep -x StardewModdingA >/dev/null; then
   for _ in $(seq 30); do pgrep -x StardewModdingA >/dev/null || break; sleep 1; done
 fi
 
-dotnet build mod/StardewPilot -c Release -v quiet -nologo | grep -E "error|Build succeeded" || true
+dotnet build mod/StardewPilot -c Release -v quiet -nologo --disable-build-servers | grep -E "error|Build succeeded" || true
 
 rm -f "$LOG"
 (cd "$GAME_DIR" && SteamAppId=413150 nohup xterm -e env TERM=xterm ./StardewModdingAPI >/dev/null 2>&1 &)

@@ -1,7 +1,7 @@
 # Knowledge sources and Windows verification: design
 
 Date: 2026-11-15
-Status: agreed 2026-11-15 after an independent review; the owner left the open decisions to the recommendations below. Knowledge section re-checked against the 1.6.15 game code the same day
+Status: implemented 2026-11-15 except where the work items say otherwise; agreed after an independent review; the owner left the open decisions to the recommendations below. Knowledge section re-checked against the 1.6.15 game code the same day
 
 Two things come next after v0.2.0: giving the guide more knowledge, from a source we can trust, and making sure the mod works on Windows without owning a Windows machine. Other candidate features are listed at the end.
 
@@ -164,16 +164,16 @@ Each can be set as a goal by itself. "Done" is what must be true to call it fini
 | # | Item | Done when | State |
 |---|---|---|---|
 | W1 | Windows step 1: start-up fixes | Unit tests pass; the game on Linux still starts and connects | Done 2026-11-15 (commit `c8fdc6b`), not yet in a release |
-| K1 | `get_fish_info` | Answer-check entries for Catfish, a Default-rule fish, and mine floors 20, 60 and 100 pass; the repeated-catch experiment finds no fish outside "possible now" | Not started |
-| K2 | `get_crop_plan` | Answer-check entries pass for a single-harvest and a regrowing crop; gold per day matches a hand calculation | Not started |
-| K3 | `get_recipes` | "Can make now" matches the crafting menu for three recipes; learned-by matches for one of each kind | Not started |
-| K4 | `get_machine_info` | Keg with Hops, Furnace with Copper Ore, Seed Maker and Cask give the outputs the game produces; the placed-or-not question is answered | Not started |
-| K5 | `get_collections` | Counts match the Collections tab and the museum on the test save | Not started |
-| K6 | `get_npc_schedule` | Host: two villagers found where the tool said, at two times of day. Guest behaviour checked in a two-player session | Not started |
-| K7 | Guide uses the tools | System prompt tells the agent when to use each tool and how to word asked and computed answers; five guide questions answered correctly in the game | Not started |
-| W2 | CI on Windows and Linux (step 2) | Workflow green on both; wrapper and real pi start and stop on Windows | Not started |
-| W3 | System-specific C# under test (step 3) | Test project green on the Windows machine | Not started |
-| W4 | `pilot_diagnose`, tester call, README note (step 4) | Command prints no secrets (checked by test); issue form exists; next release notes carry the call | Not started |
+| K1 | `get_fish_info` | Answer-check entries for Catfish, a Default-rule fish, and mine floors 20, 60 and 100 pass; the repeated-catch experiment finds no fish outside "possible now" | Done 2026-11-15. Catfish, Woodskip, Sunfish and the Beach list match the data; mine floors 20, 60, 100 give Stonefish, Ice Pip, Lava Eel (+ Ghostfish from the mine data). 10-cast experiment at the Beach: all 8 fish caught were in "possible now" |
+| K2 | `get_crop_plan` | Answer-check entries pass for a single-harvest and a regrowing crop; gold per day matches a hand calculation | Done 2026-11-15. Cauliflower (12 days, 175g, seed 80g) = 7.9 g/day and Blueberry (4 harvests of 3, 50g, seed 80g, 27 days) = 19.3 g/day match hand calculations |
+| K3 | `get_recipes` | "Can make now" matches the crafting menu for three recipes; learned-by matches for one of each kind | Done 2026-11-15. Can-make counts match arithmetic for 120 Wood (60 fences, 12 gates, 2 chests); learned-by correct for start (Fried Egg), skill (Sprinkler, Farming 2), friendship (Salad, Emily 3 hearts), TV (Maki Roll, reported as not in data) |
+| K4 | `get_machine_info` | Keg with Hops, Furnace with Copper Ore, Seed Maker and Cask give the outputs the game produces; the placed-or-not question is answered | Done 2026-11-15. Keg+Hops = Pale Ale 37h30m; Furnace+5 Copper Ore+Coal = Copper Bar; Seed Maker and Cask answered by the game's code; an unplaced machine works for these, and a placed one is used when it exists. Code-decided outputs are flagged as one example |
+| K5 | `get_collections` | Counts match the Collections tab and the museum on the test save | Done 2026-11-15. Reads the game's own Collections page, so totals are the game's (154 shipped, 72 fish, 42 artifacts, 53 minerals, 81 dishes in 1.6.15) |
+| K6 | `get_npc_schedule` | Host: two villagers found where the tool said, at two times of day. Guest behaviour checked in a two-player session | Host done 2026-11-15: Pierre and Lewis were where the plan said at 8:50am and 11:00am. Guest not checked: needs a second game instance (the VM lacks the RAM); the tool reports "plan unknown" for guests |
+| K7 | Guide uses the tools | System prompt tells the agent when to use each tool and how to word asked and computed answers; five guide questions answered correctly in the game | Done 2026-11-15. Five questions (Catfish, best crop, Keg+Hops, where is Pierre, Salad recipe) answered correctly in the game; prompt tightened after the model added unmarked facts from memory |
+| W2 | CI on Windows and Linux (step 2) | Workflow green on both; wrapper and real pi start and stop on Windows | Workflow written; local runs pass (unit tests, smoke test against real pi). Windows result: see the first CI run |
+| W3 | System-specific C# under test (step 3) | Test project green on the Windows machine | Code moved to mod/StardewPilot/Platform; 11 tests pass on Linux. Windows result: see the first CI run |
+| W4 | `pilot_diagnose`, tester call, README note (step 4) | Command prints no secrets (checked by test); issue form exists; next release notes carry the call | pilot_diagnose (tested: no token or link in output, also checked in the real SMAPI log), issue form, README note done. Tester call goes into the next release notes |
 
 Suggested order: K1 to K7, then W2, W3, W4, then a release that carries W1 to W4 and the tools.
 

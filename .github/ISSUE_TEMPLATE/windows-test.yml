@@ -1,0 +1,41 @@
+name: Windows test report
+description: Tried StardewPilot on Windows? Tell us how it went (about five minutes).
+title: "Windows test: "
+labels: ["windows-test"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for testing! Nobody on the project has a Windows PC, so your report is how we know it works.
+        Please do **not** paste API keys, the bridge token, `config.json`, `bridge.json` or the settings page link.
+  - type: textarea
+    id: diagnose
+    attributes:
+      label: pilot_diagnose output
+      description: In the SMAPI console window, type `pilot_diagnose` and press Enter, then paste what it prints. It contains no keys, tokens or links.
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      description: Tick what worked.
+      options:
+        - label: The game started with the mod, and the SMAPI console showed "Bridge listening".
+        - label: With `Launcher.Enabled` set to true, the copilot started (the console showed "Agent connected to the bridge" after setup).
+        - label: In the game, F8 then `/settings` opened the settings page in my browser.
+        - label: I could add an API key or sign in on the page, and Test said the model works.
+        - label: Asking a question in the F8 chat got an answer.
+        - label: One autopilot action worked (for example "water my crops" or "walk to Pierre's").
+        - label: Quitting the game also closed the copilot (no node or pi left in Task Manager).
+  - type: textarea
+    id: problems
+    attributes:
+      label: What went wrong or looked odd
+      description: Include any red lines from the SMAPI console. Antivirus or firewall prompts are worth mentioning too.
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 23H2

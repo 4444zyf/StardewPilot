@@ -42,13 +42,14 @@ internal sealed class BridgeServer : IDisposable
 
     public int ClientCount => this.clients.Count;
 
+    /// <summary>The WebSocket URL agents use; set by Start.</summary>
+    public string Url { get; private set; } = "";
+
     public void Register(string method, MethodHandler handler) => this.methods[method] = handler;
 
     public void Start()
     {
-        this.listener = new HttpListener();
-        this.listener.Prefixes.Add($"http://127.0.0.1:{this.port}/");
-        this.listener.Start();
+        (this.listener, this.Url) = Platform.Loopback.Start(this.port);
         _ = Task.Run(this.AcceptLoop);
     }
 

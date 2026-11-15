@@ -20,6 +20,10 @@ Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (p
 - Node.js 22.19+ and [pi](https://github.com/earendil-works/pi) 1.5+
 - An AI model: a subscription (ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot and others), an API key, or a local model. You set this up on the copilot settings page; no terminal needed.
 
+**Systems.** Played and tested on Linux. **Windows: automated tests pass; not yet played by a person.** If you try it on Windows, please fill in the [Windows test report](https://github.com/4444zyf/StardewPilot/issues/new?template=windows-test.yml). macOS should work but is untested.
+
+**Something wrong?** Type `pilot_diagnose` in the SMAPI console. It prints a self-check (versions, whether Node and pi were found, the copilot's state) without keys, tokens or links, ready to paste into an issue.
+
 ## Build and run
 
 1. Build the mod. This also copies it into the game's `Mods` folder:
@@ -103,6 +107,14 @@ Settings in the mod's `config.json`:
 | `get_quests` | Quest log and special orders |
 | `get_bundles` | Community Center bundles, once the farmer can read them |
 | `get_shop_stock` | What a shop sells today, with prices |
+| `get_fish_info` | Where, when and in what weather a fish bites; which fish a map has and which can bite now |
+| `get_crop_plan` | Crops for a season: seed prices, growth, sell price, harvests left, gold per day |
+| `get_recipes` | Cooking and crafting recipes: ingredients, known or not, how learned, how many can be made now |
+| `get_machine_info` | What a machine accepts and what it makes from an item, and how long it takes |
+| `get_collections` | Collections progress and what can still go to the museum |
+| `get_npc_schedule` | Where a villager is now and the rest of today's plan |
+
+The knowledge tools answer from the running game: its data files, and its own functions where it has one (machine output, sell prices, craftable counts, the Collections page). Each result says which parts were computed by the mod instead (for example "possible now" for fish and gold per day for crops). The mod does not read the wiki.
 
 Actions (each returns done, partly done or failed, with a reason):
 
@@ -128,6 +140,10 @@ Memory and self-play: `read_memory`, `write_notes`, `write_day_plan`, `write_day
 The bridge speaks JSON-RPC with MCP method names (`initialize`, `tools/list`, `tools/call`), so other agent frameworks can use it too.
 
 ## Development
+
+- CI (GitHub Actions, Linux and Windows) runs the agent and wrapper tests, the wrapper against the real pi, and the mod's system-specific code (`mod/Platform.Tests`). The game itself cannot run in CI.
+- `dotnet run --project mod/Platform.Tests`: tests the mod's system-specific code (config folder, private files, status file, starting the agent, the bridge listener, `pilot_diagnose`) without the game.
+- `node agent/test/ci/wrapper-smoke.ts`: starts the wrapper with the installed pi in a throwaway folder, signs in with a made-up key, and checks that pi starts and stops with it.
 
 - `cd agent && npm install && npm test`: tests the extension offline against recorded bridge messages (`agent/test/fixtures`), and the wrapper's settings server and pi supervisor with fakes.
 - `node agent/src/wrapper/main.ts status`: shows the wrapper's state and model.
