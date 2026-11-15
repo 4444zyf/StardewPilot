@@ -1,7 +1,7 @@
 # Knowledge sources and Windows verification: design
 
 Date: 2026-11-15
-Status: agreed 2026-11-15 after an independent review; the owner left the open decisions to the recommendations below
+Status: agreed 2026-11-15 after an independent review; the owner left the open decisions to the recommendations below. Knowledge section re-checked against the 1.6.15 game code the same day
 
 Two things come next after v0.2.0: giving the guide more knowledge, from a source we can trust, and making sure the mod works on Windows without owning a Windows machine. Other candidate features are listed at the end.
 
@@ -15,10 +15,13 @@ The guide answers from 11 state tools plus shop stock. It knows prices, gift tas
 
 There is one authority: **the game the player is running**, meaning its data files and its code together. It is what will actually happen, for this version, this language, and with the player's other mods applied. The wiki is written from the same data. Where the game's code overrides its data (see fish below), the code is the truth.
 
-The risk is not the source but **our reading of it**. A tool that copies a field from a data file cannot be wrong. A tool that works something out ("this fish can bite here now") contains our understanding of the game's rules, and that can be wrong. So every tool result separates the two:
+The risk is not the source but **our reading of it**. So every tool result says how each part was obtained:
 
-- **raw**: taken directly from the game's data or the player's records.
-- **computed**: worked out by our code from the game's rules. Each computed answer is covered by the answer-check list (see Testing), and the agent can say "by my calculation" for these.
+- **raw**: copied from the game's data or the player's records. Cannot be wrong.
+- **asked**: the answer of one of the game's own functions, called the way the game calls it (for example its "what would this machine make from this item" check, or its "how many can I craft" count). As right as the game.
+- **computed**: worked out by our code from our understanding of the rules. This is the only kind that can be wrong. Each computed answer is covered by the answer-check list (see Testing), and the agent can say "by my calculation" for these.
+
+Rule for building tools: prefer raw, then asked, and compute only what the game offers no function for.
 
 Below the game, in order:
 
@@ -41,14 +44,14 @@ Consequence: explanations of things the game's data does not contain (quest walk
 
 All read-only. Each returns display names in the game's language plus stable IDs.
 
-| Tool | Answers | Source | Raw or computed |
+| Tool | Answers | Source | How obtained |
 |---|---|---|---|
 | `get_fish_info` | Where and when a fish can be caught: maps, seasons, hours, weather, fishing level. Or, for a map, which fish are possible there, and which are possible right now | `Data/Fish`, `Data/Locations`, the farm's map property, plus a small hand-written table for the mines | Listing: raw. "Possible now": computed |
-| `get_crop_plan` | For a season: each crop's seed price and shop, days to grow, regrowth, sell price, harvests still possible if planted today, gold per day | `Data/Crops`, `Data/Objects`, today's shop stock | Fields: raw. Harvest count and gold per day: computed |
-| `get_recipes` | Cooking or crafting recipes: ingredients, whether known, what can be made now from the backpack and chests | `Data/CookingRecipes`, `Data/CraftingRecipes`, player records | Raw; "can make now" computed |
-| `get_machine_info` | What a machine accepts and produces, and how long it takes | `Data/Machines` | Raw where the data states the output |
-| `get_collections` | What is still missing: museum donations, items never shipped, fish never caught, recipes never cooked | Player records; the museum's own "can this be donated" check | Raw |
-| `get_npc_schedule` | Where a villager is now and where they will be later today | The schedule the game has loaded for today | Raw |
+| `get_crop_plan` | For a season: each crop's seed price and shop, days to grow, regrowth, sell price, harvests still possible if planted today, gold per day | `Data/Crops`, today's shop stock, the game's sell-price function | Fields: raw. Sell price: asked. Harvest count and gold per day: computed |
+| `get_recipes` | Cooking or crafting recipes: ingredients, whether known, how it is learned, how many can be made now from the backpack and chests | `Data/CookingRecipes`, `Data/CraftingRecipes`, player records, the game's recipe functions | Ingredients, known: raw. "Can make now": asked. How learned: raw where the recipe data says, otherwise not given |
+| `get_machine_info` | What a machine accepts; what it would make from a given item, and how long that takes | `Data/Machines`, the game's machine check in its "probe" mode | Accepted items: raw. Output for an item: asked |
+| `get_collections` | What is still missing: museum donations, items never shipped, fish never caught, recipes never cooked | Player records; the museum's own "can this be donated" function | Raw and asked |
+| `get_npc_schedule` | Where a villager is now and where they will be later today | The schedule the game has loaded for today | Raw on the host; see limits for guests |
 
 Known limits, found by reading the game's code, that each tool must handle honestly:
 
@@ -64,10 +67,13 @@ Known limits, found by reading the game's code, that each tool must handle hones
   - **Island and Railroad.** Their code only adds one-time special items (golden walnuts, a quest item), not fish. The tool ignores them; the spoiler rule would hide them anyway.
   - **Fish ponds and fish frenzies** replace the catch at one spot. Not reported.
   - Maps added by other mods that choose fish in their own code cannot be known. The tool's answer for a modded map says it shows data rules only.
-- **Machines.** Some outputs are decided by game code, not data (the data only names the function). The tool returns those as "decided by the game" with our note for the unmodded machines.
-- **Recipes.** How a recipe is learned is only partly in the recipe data (friendship and skill unlocks are; TV, mail and shop sources are elsewhere). The tool reports the source when the data has it and "source not in data" otherwise.
-- **Schedules.** Confirmed for the host's game only. Whether a co-op guest has other villagers' schedules loaded must be checked first; if not, the tool says it is unavailable for guests.
-- **Crop plan.** Assumes no fertiliser and the current map's seasons, and says so in the result.
+- **Machines.** The game has a "probe" mode for exactly this question: the same function it runs when a player holds an item up to a machine, which reports the output without changing anything. The tool uses it, so machines whose output is decided in code (cask, seed maker, geode crusher, deconstructor and others) need no notes from us. Where a machine picks one of several outputs at random, the tool lists every candidate whose condition passes instead of one roll. Open point for implementation: the probe expects a machine placed in a map; whether a machine that is not placed anywhere works for every machine type must be tried, and any that do not are reported as "place one to check".
+- **Recipes.** "How many can I make" is the game's own count, including nearby chests the way the crafting menu counts them. How a recipe is learned is in the recipe data for three kinds: known from the start, a skill level (parsed by the game's own function), and friendship with a villager. Recipes from the TV, shops or special mail are not marked in the recipe data; the tool says "source not in recipe data" for those.
+- **Museum.** The game has a function for "can this item still be donated", based on item tags, so the tool asks it for every item instead of keeping a list. This also covers items added by other mods.
+- **Schedules.** On the host, the tool reads the day's schedule the game has built: times, target maps and tiles. A schedule can change during the day (rain, festivals, marriage); the tool returns what is loaded now. In co-op the host decides schedules, and only the schedule's name is sent to guests. For guests the tool first checks whether the guest's game has built the schedule itself; if not, it reports where the villager is now and that later stops are unknown.
+- **Crop plan.** Assumes no fertiliser and the current map's seasons, and says so in the result. Sell prices come from the game's own price function, so professions are included.
+- **Conditions with chance.** Some data conditions include a random roll. For "possible" answers the tool tells the game's condition evaluator to skip those, so "possible" means "can happen", not "will happen this time".
+- **Calling the game's functions.** Several of them draw from the game's shared random generator. That is harmless (the game calls the same functions every time the player hovers an item), but a single random result is not an answer, which is why the fish tool does not use the game's catch function.
 - **Broken mods.** Entries that fail to load are skipped and counted ("3 entries could not be read").
 
 Not in this round: animal and building info, and a "how to get this item" index across shops, machines and monsters. Both are large and spoiler-heavy for what they add.
@@ -150,6 +156,26 @@ Machines cannot press F8 in the game on Windows, or meet a home PC's antivirus. 
 - **Windows build of the game under Wine on the dev VM.** It would test Wine, not Windows: starting processes and replacing open files are exactly where Wine differs. It also needs the owner's Steam login to download the Windows files, and the VM is short of RAM.
 - **A Windows VM inside the dev VM.** The dev machine is itself a VM with 6 GB of RAM.
 - **A Windows evaluation VM on the owner's own computer.** This would work: Microsoft offers a free 90-day evaluation image, and one Steam purchase covers all systems. It is the fallback if no tester turns up; it costs the owner an afternoon.
+
+## Work items
+
+Each can be set as a goal by itself. "Done" is what must be true to call it finished.
+
+| # | Item | Done when | State |
+|---|---|---|---|
+| W1 | Windows step 1: start-up fixes | Unit tests pass; the game on Linux still starts and connects | Done 2026-11-15 (commit `c8fdc6b`), not yet in a release |
+| K1 | `get_fish_info` | Answer-check entries for Catfish, a Default-rule fish, and mine floors 20, 60 and 100 pass; the repeated-catch experiment finds no fish outside "possible now" | Not started |
+| K2 | `get_crop_plan` | Answer-check entries pass for a single-harvest and a regrowing crop; gold per day matches a hand calculation | Not started |
+| K3 | `get_recipes` | "Can make now" matches the crafting menu for three recipes; learned-by matches for one of each kind | Not started |
+| K4 | `get_machine_info` | Keg with Hops, Furnace with Copper Ore, Seed Maker and Cask give the outputs the game produces; the placed-or-not question is answered | Not started |
+| K5 | `get_collections` | Counts match the Collections tab and the museum on the test save | Not started |
+| K6 | `get_npc_schedule` | Host: two villagers found where the tool said, at two times of day. Guest behaviour checked in a two-player session | Not started |
+| K7 | Guide uses the tools | System prompt tells the agent when to use each tool and how to word asked and computed answers; five guide questions answered correctly in the game | Not started |
+| W2 | CI on Windows and Linux (step 2) | Workflow green on both; wrapper and real pi start and stop on Windows | Not started |
+| W3 | System-specific C# under test (step 3) | Test project green on the Windows machine | Not started |
+| W4 | `pilot_diagnose`, tester call, README note (step 4) | Command prints no secrets (checked by test); issue form exists; next release notes carry the call | Not started |
+
+Suggested order: K1 to K7, then W2, W3, W4, then a release that carries W1 to W4 and the tools.
 
 ## Other candidate features
 
