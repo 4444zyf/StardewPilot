@@ -136,6 +136,9 @@ internal static class Schema
 
     public static JObject Boolean(string description) => new() { ["type"] = "boolean", ["description"] = description };
 
+    public static JObject Array(JObject items, string description) =>
+        new() { ["type"] = "array", ["items"] = items, ["description"] = description };
+
     public static JObject Enum(string description, params string[] values) =>
         new() { ["type"] = "string", ["description"] = description, ["enum"] = new JArray(values) };
 }

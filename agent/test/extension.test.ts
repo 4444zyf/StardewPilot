@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createStardewPilot, tipPrompt } from "../src/index.ts";
+import { actionFailed, createStardewPilot, MAX_FAILED_ACTIONS, tipPrompt } from "../src/index.ts";
 import { ReplayTransport } from "./fake-transport.ts";
 
 /** Minimal stand-in for pi's ExtensionAPI: records what the extension registers. */
@@ -157,4 +157,32 @@ test("warnings are kept as context without starting a turn", async () => {
 test("tip prompt falls back to the game language from settings", () => {
 	assert.match(tipPrompt({ kind: "x", fallback: "y" }, "fr"), /\(fr\)/);
 	assert.match(tipPrompt({ kind: "x", fallback: "y" }), /\(en\)/);
+});
+
+test("a failed action result counts as a failure", () => {
+	assert.equal(actionFailed({ content: [{ text: '{"result":"failed","summary":"x"}' }] }), true);
+	assert.equal(actionFailed({ content: [{ text: '{"result":"partly done"}' }] }), false);
+	assert.equal(actionFailed({ content: [{ text: "not json" }], isError: true }), true);
+});
+
+test("after the first try and two re-plans fail, further actions are blocked", async () => {
+	const pi = fakePi();
+	const transport = new ReplayTransport();
+	// Pretend the bridge offers one action tool that always fails.
+	(transport as any).recording["tools/list"].tools.push({ name: "water_crops", description: "", inputSchema: { type: "object" }, annotations: { readOnlyHint: false } });
+	(transport as any).recording["tools/call"].water_crops = { content: [{ type: "text", text: '{"result":"failed","summary":"stuck"}' }], isError: false };
+	createStardewPilot(pi.api as any, async () => transport);
+	await pi.fire("session_start");
+	await pi.fire("agent_start");
+	for (let i = 0; i < MAX_FAILED_ACTIONS; i++) {
+		assert.equal(await pi.fire("tool_call", { toolName: "water_crops", input: {} }), undefined);
+		await pi.tools.get("water_crops").execute(`c${i}`, {});
+	}
+	const blocked = await pi.fire("tool_call", { toolName: "water_crops", input: {} });
+	assert.equal(blocked?.block, true);
+	assert.match(blocked.reason, /tell the player/);
+	// Reading state is still allowed, and a new run starts fresh.
+	assert.equal(await pi.fire("tool_call", { toolName: "get_status", input: {} }), undefined);
+	await pi.fire("agent_start");
+	assert.equal(await pi.fire("tool_call", { toolName: "water_crops", input: {} }), undefined);
 });

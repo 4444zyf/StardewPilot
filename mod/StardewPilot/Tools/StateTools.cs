@@ -491,34 +491,39 @@ internal static class StateTools
 
     // ---------------- item info ----------------
 
-    private static Dictionary<string, string>? nameIndex;
+    private static Dictionary<string, string>? displayIndex;
+    private static Dictionary<string, string>? internalIndex;
 
-    /// <summary>Find a qualified item id from a name or id.</summary>
+    /// <summary>Find a qualified item id from a name or id. Display names win over internal names; plain objects (O) win over other types.</summary>
     public static string? FindItemId(string query)
     {
         query = query.Trim();
         if (ItemRegistry.GetData(query) is { } direct && (query.StartsWith("(") || query.All(char.IsDigit)))
             return direct.QualifiedItemId;
 
-        if (nameIndex == null)
+        if (displayIndex == null || internalIndex == null)
         {
-            nameIndex = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (IItemDataDefinition type in ItemRegistry.ItemTypes)
+            displayIndex = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            internalIndex = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            // Objects first, so "Stone" means the stone item, not a big craftable or a mine node.
+            foreach (IItemDataDefinition type in ItemRegistry.ItemTypes.OrderBy(t => t.Identifier == "(O)" ? 0 : 1))
             {
                 foreach (string id in type.GetAllIds())
                 {
                     ParsedItemData? data = type.GetData(id);
                     if (data == null || data.IsErrorItem) continue;
-                    nameIndex.TryAdd(data.DisplayName, data.QualifiedItemId);
-                    nameIndex.TryAdd(data.InternalName, data.QualifiedItemId);
+                    displayIndex.TryAdd(data.DisplayName, data.QualifiedItemId);
+                    internalIndex.TryAdd(data.InternalName, data.QualifiedItemId);
                 }
             }
         }
-        return nameIndex.TryGetValue(query, out string? qid) ? qid : null;
+        return displayIndex.TryGetValue(query, out string? qid) ? qid
+            : internalIndex.TryGetValue(query, out qid) ? qid
+            : null;
     }
 
     /// <summary>Drop the cached name index (call when the language changes).</summary>
-    public static void ResetNameIndex() => nameIndex = null;
+    public static void ResetNameIndex() => displayIndex = internalIndex = null;
 
     private static object GetItemInfo(JObject args)
     {

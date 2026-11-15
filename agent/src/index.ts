@@ -13,6 +13,9 @@ import { BridgeClient, type McpTool, openWebSocket, readConnectionInfo, type Tra
 import { buildSystemPrompt } from "./system-prompt.ts";
 
 const STATUS_KEY = "stardewpilot";
+const ACTION_TIMEOUT_MS = 20 * 60 * 1000;
+/** Failed actions allowed per run: the first try plus two re-plans. */
+export const MAX_FAILED_ACTIONS = 3;
 
 /** Opens the transport to the bridge. Replaced in tests. */
 export type Connector = () => Promise<Transport>;
@@ -34,6 +37,8 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 	let running = false;
 	let runKind: "reply" | "tip" = "reply";
 	const queuedTips: TipTrigger[] = [];
+	const readOnly = new Set<string>();
+	let failedActions = 0;
 	let reconnectTimer: ReturnType<typeof setInterval> | undefined;
 	let active = false;
 
@@ -75,21 +80,31 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 		for (const tool of tools) {
 			if (registered.has(tool.name)) continue;
 			registered.add(tool.name);
+			if (tool.annotations?.readOnlyHint) readOnly.add(tool.name);
+			const isAction = !tool.annotations?.readOnlyHint;
 			pi.registerTool({
 				name: tool.name,
 				label: tool.name,
 				description: tool.description,
 				parameters: tool.inputSchema as never,
 				annotations: { readOnlyHint: tool.annotations?.readOnlyHint ?? false },
-				async execute(_toolCallId, params) {
+				async execute(_toolCallId, params, signal) {
 					const c = await ensureConnected();
 					if (!c) throw new Error(`Not connected to the game: ${lastError}`);
-					const result = await c.callTool(tool.name, (params ?? {}) as Record<string, unknown>);
-					return {
-						content: result.content,
-						details: undefined,
-						isError: result.isError === true,
-					};
+					// Escape in pi aborts the call; stop the job in the game too.
+					const onAbort = () => void c.callTool("stop_autopilot", {}).catch(() => {});
+					if (isAction) signal?.addEventListener("abort", onAbort, { once: true });
+					try {
+						const result = await c.callTool(tool.name, (params ?? {}) as Record<string, unknown>, isAction ? ACTION_TIMEOUT_MS : undefined);
+						if (isAction && tool.name !== "stop_autopilot" && actionFailed(result)) failedActions++;
+						return {
+							content: result.content,
+							details: undefined,
+							isError: result.isError === true,
+						};
+					} finally {
+						signal?.removeEventListener("abort", onAbort);
+					}
 				},
 			});
 		}
@@ -168,6 +183,7 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 
 	pi.on("agent_start", async () => {
 		running = true;
+		failedActions = 0;
 		client?.notify("agent/status", { busy: true });
 	});
 
@@ -215,6 +231,13 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 	pi.on("tool_call", async (event) => {
 		if (!registered.has(event.toolName)) {
 			return { block: true, reason: `${event.toolName} is not a Stardew tool and is disabled in StardewPilot.` };
+		}
+		// At most two re-plans: after three failed actions, stop acting and explain.
+		if (!readOnly.has(event.toolName) && event.toolName !== "stop_autopilot" && failedActions >= MAX_FAILED_ACTIONS) {
+			return {
+				block: true,
+				reason: `${failedActions} actions have failed in a row. Do not try again: stop and tell the player what went wrong and what they could do.`,
+			};
 		}
 	});
 
@@ -273,4 +296,14 @@ export function tipPrompt(tip: TipTrigger, gameLanguage?: string): string {
 /** Short label for the overlay's "Thinking (...)" line. */
 export function describeTool(name: string): string {
 	return name.replace(/^get_/, "checking ").replace(/_/g, " ");
+}
+
+/** Whether an action tool's result means the job failed. */
+export function actionFailed(result: { content: Array<{ text: string }>; isError?: boolean }): boolean {
+	if (result.isError) return true;
+	try {
+		return JSON.parse(result.content[0]?.text ?? "{}").result === "failed";
+	} catch {
+		return false;
+	}
 }

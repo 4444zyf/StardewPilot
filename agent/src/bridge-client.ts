@@ -156,14 +156,14 @@ export class BridgeClient {
 		this.notificationHandlers.push(handler);
 	}
 
-	request<T>(method: string, params?: unknown): Promise<T> {
+	request<T>(method: string, params?: unknown, timeoutMs = this.requestTimeoutMs): Promise<T> {
 		if (this.closed) return Promise.reject(new Error("Bridge connection is closed."));
 		const id = this.nextId++;
 		return new Promise<T>((resolve, reject) => {
 			const timer = setTimeout(() => {
 				this.pending.delete(id);
-				reject(new Error(`Bridge did not answer '${method}' within ${this.requestTimeoutMs / 1000}s.`));
-			}, this.requestTimeoutMs);
+				reject(new Error(`Bridge did not answer '${method}' within ${timeoutMs / 1000}s.`));
+			}, timeoutMs);
 			this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
 			this.transport.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
 		});
@@ -180,8 +180,9 @@ export class BridgeClient {
 		return result.tools;
 	}
 
-	callTool(name: string, args: Record<string, unknown>): Promise<ToolCallResult> {
-		return this.request<ToolCallResult>("tools/call", { name, arguments: args });
+	/** Call a bridge tool. Actions (autopilot jobs) can run for many minutes, so they get a long timeout. */
+	callTool(name: string, args: Record<string, unknown>, timeoutMs?: number): Promise<ToolCallResult> {
+		return this.request<ToolCallResult>("tools/call", { name, arguments: args }, timeoutMs);
 	}
 
 	close(): void {

@@ -11,7 +11,7 @@ See [the design](docs/2026-11-15-agent-copilot-design.md) for the full plan.
 
 ## Status
 
-Steps 1 and 2 of the build order work: the read-only bridge, and the in-game guide (private chat overlay, proactive tips, instant warnings). The agent can read the game but cannot act yet.
+Steps 1 to 3 of the build order work: the read-only bridge, the in-game guide (private chat overlay, proactive tips, instant warnings), and the commanded autopilot (the agent walks the farmer between maps and runs tasks such as planting, watering, shopping and shipping when you ask).
 
 ## Requirements
 
@@ -46,6 +46,9 @@ Ask things like "what should I do today?", "what does Abigail like?" or "which c
 - **Tips**: rule checks in the mod notice things worth saying (crops still dry in the evening, a birthday or festival today, rain tomorrow, low energy far from home). The agent words each tip in the game's language and it appears in the upper left. If no agent is connected, or it does not answer within 45 seconds, a fixed text is shown instead.
 - **Warnings** that must land before you act are shown at once as fixed text, without waiting for the model: a Community Center bundle item dropped in the shipping bin or sold to a shop, being out after midnight, energy almost gone.
 
+- **Autopilot**: ask in the chat ("plant my parsnip seeds and water them", "buy 5 cauliflower seeds"). The model plans; fixed C# routines do the work the way a player would, walking, spending energy and game time, and using the game's own menus and actions. Moving or using a tool yourself stops it at once; so does a cutscene, festival or dialogue. **F9** switches the autopilot off and on.
+- **Rules the model cannot override**: at 11:30pm work stops and the farmer goes to bed; tool use stops before energy runs out; shipping, selling, gifting and purchases over 500g ask you first in an in-game question ("Yes", "Yes, and don't ask again", "No"). After three failed actions in a row the agent must stop and explain.
+
 Settings in the mod's `config.json`:
 
 | Setting | Default | Meaning |
@@ -55,9 +58,15 @@ Settings in the mod's `config.json`:
 | `MaxTipsPerDay` | `6` | Proactive tips per game day (warnings do not count) |
 | `Warnings` | `true` | Instant fixed-text warnings |
 | `TellMeEverything` | `false` | Allow spoilers about content the save has not reached |
-| `PauseWhileThinking` | `true` | Single-player: stop the clock while the agent thinks |
+| `PauseWhileThinking` | `true` | Single-player: stop the clock while the agent thinks (not while it acts) |
+| `Autopilot.ToggleKey` | `F9` | Switches the autopilot off and on |
+| `Autopilot.StopWorkAt` | `2330` | Game time when work stops and the farmer goes to bed |
+| `Autopilot.MinEnergy` | `10` | Tool use stops before energy drops below this |
+| `Autopilot.ConfirmSpendAbove` | `500` | Purchases above this ask first |
+| `Autopilot.AlwaysAllow` | all `false` | Standing permissions: `Ship`, `Sell`, `Spend`, `Gift`, `Trash` |
+| `Autopilot.FullSelfPlay` | `false` | No confirmations at all (other players' things in co-op still ask) |
 
-## Tools (step 1)
+## Tools
 
 | Tool | What it returns |
 |---|---|
@@ -72,6 +81,24 @@ Settings in the mod's `config.json`:
 | `get_skills` | Skill levels, experience, professions |
 | `get_quests` | Quest log and special orders |
 | `get_bundles` | Community Center bundles, once the farmer can read them |
+| `get_shop_stock` | What a shop sells today, with prices |
+
+Actions (each returns done, partly done or failed, with a reason):
+
+| Tool | What it does |
+|---|---|
+| `walk_to` | Walks to a map, a tile or a villager, across maps through doors and map edges |
+| `water_crops` | Waters every dry crop, refilling the can at the nearest water |
+| `harvest_crops` | Harvests ready crops (hand or scythe) |
+| `plant_seeds` | Uses empty soil, or clears and tills new soil near the house, plants, then waters |
+| `collect_forage` | Picks up forage on a map |
+| `buy_items` | Walks to the shop and buys through the shop menu; respects opening hours |
+| `ship_items` | Puts items in the shipping bin (asks first; keeps one of any bundle item) |
+| `store_in_chest`, `take_from_chest` | Moves items between the backpack and a chest |
+| `talk_to`, `give_gift` | Talks to or gifts a villager (gifting asks first) |
+| `go_to_bed` | Walks home and sleeps |
+| `use_tool`, `interact` | Low-level fallbacks on one tile |
+| `stop_autopilot` | Stops the current action |
 
 The bridge speaks JSON-RPC with MCP method names (`initialize`, `tools/list`, `tools/call`), so other agent frameworks can use it too.
 

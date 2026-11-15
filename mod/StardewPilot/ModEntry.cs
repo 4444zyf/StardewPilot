@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
+using StardewPilot.Autopilot;
 using StardewPilot.Bridge;
 using StardewPilot.Guide;
 using StardewPilot.Tools;
@@ -19,6 +21,7 @@ public sealed class ModEntry : Mod
     private BridgeServer? bridge;
     private ToolRegistry? tools;
     private TipEngine? tips;
+    private JobRunner? runner;
     private bool autoLoadDone;
 
     /// <summary>Tips sent to the agent for wording, with the time their fallback text is due.</summary>
@@ -36,6 +39,13 @@ public sealed class ModEntry : Mod
 
         this.tools = new ToolRegistry(this.Monitor);
         StateTools.Register(this.tools, () => this.ModManifest.Version.ToString());
+        this.runner = new JobRunner(this.Monitor, () => this.config);
+        ActionTools.Register(this.tools, this.runner, new Macros(() => this.config, helper));
+        this.runner.Finished += (name, result) =>
+        {
+            if (name == "go_to_bed (end of day)")
+                ChatLog.Add(ChatSender.System, result.Outcome == JobOutcome.Done ? "It's late, so the autopilot put the farmer to bed." : $"Tried to go to bed: {result.Summary}");
+        };
         this.tips = new TipEngine(() => this.config, this.DeliverTip, this.ShowWarning);
 
         ChatLog.Added += entry =>
@@ -50,6 +60,7 @@ public sealed class ModEntry : Mod
         helper.Events.GameLoop.DayStarted += (_, _) =>
         {
             this.tips.OnDayStarted();
+            Navigation.ResetBlockedExits();
             this.Notify("day_started", new { season = Game1.currentSeason, day = Game1.dayOfMonth, year = Game1.year });
         };
         helper.Events.GameLoop.TimeChanged += (_, e) =>
@@ -60,6 +71,7 @@ public sealed class ModEntry : Mod
         helper.Events.GameLoop.Saved += (_, _) => this.Notify("saved");
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
         {
+            this.runner.Stop(JobOutcome.Failed, "Returned to the title screen.");
             ChatLog.Clear();
             this.pendingTips.Clear();
             this.Notify("returned_to_title");
@@ -119,8 +131,11 @@ public sealed class ModEntry : Mod
 
         if (Context.IsWorldReady)
         {
-            // Single-player: hold the clock while the agent thinks. Co-op cannot pause freely.
-            bool hold = this.config.Dev.FreezeTime || (this.config.PauseWhileThinking && AgentState.Busy && !Context.IsMultiplayer);
+            this.runner!.Update();
+            this.EnforceEndOfDay();
+
+            // Single-player: hold the clock while the agent thinks (not while autopilot jobs run). Co-op cannot pause freely.
+            bool hold = this.config.Dev.FreezeTime || (this.config.PauseWhileThinking && AgentState.Busy && !this.runner.IsRunning && !Context.IsMultiplayer);
             if (hold)
                 Game1.gameTimeInterval = 0;
 
@@ -141,9 +156,54 @@ public sealed class ModEntry : Mod
         }
     }
 
+    /// <summary>Late at night, stop work and go to bed, whatever the plan says. Passing out costs gold.</summary>
+    private void EnforceEndOfDay()
+    {
+        if (!this.runner!.IsRunning || this.runner.CurrentJob is "go_to_bed" or "go_to_bed (end of day)")
+            return;
+        if (Game1.timeOfDay < this.config.Autopilot.StopWorkAt)
+            return;
+        this.runner.Stop(JobOutcome.Partial, "It's late, so the autopilot stopped work and is taking the farmer to bed.");
+        var macros = new Macros(() => this.config, this.Helper);
+        _ = this.runner.Start("go_to_bed (end of day)", ctx => macros.GoToBed(ctx));
+    }
+
+    /// <summary>Movement or tool input from the player cancels the autopilot at once.</summary>
+    private bool IsTakeControlInput(SButton button)
+    {
+        if (Game1.activeClickableMenu != null)
+            return false; // typing in the chat or answering a confirmation does not count
+        var o = Game1.options;
+        return button is SButton.MouseLeft or SButton.MouseRight
+            || o.moveUpButton.Any(k => k.ToSButton() == button) || o.moveDownButton.Any(k => k.ToSButton() == button)
+            || o.moveLeftButton.Any(k => k.ToSButton() == button) || o.moveRightButton.Any(k => k.ToSButton() == button)
+            || o.useToolButton.Any(k => k.ToSButton() == button) || o.actionButton.Any(k => k.ToSButton() == button)
+            || button.IsUseToolButton() || button.IsActionButton()
+            || button is SButton.LeftThumbstickUp or SButton.LeftThumbstickDown or SButton.LeftThumbstickLeft or SButton.LeftThumbstickRight
+                or SButton.DPadUp or SButton.DPadDown or SButton.DPadLeft or SButton.DPadRight;
+    }
+
     private void OnButtonPressed(object? sender, ButtonPressedEventArgs e)
     {
-        if (e.Button != this.config.ChatKey || !Context.IsWorldReady)
+        if (!Context.IsWorldReady)
+            return;
+
+        if (e.Button == this.config.Autopilot.ToggleKey)
+        {
+            this.runner!.Enabled = !this.runner.Enabled;
+            if (!this.runner.Enabled)
+                this.runner.Stop(JobOutcome.Partial, "The player switched the autopilot off.");
+            Game1.addHUDMessage(new HUDMessage($"StardewPilot autopilot {(this.runner.Enabled ? "on" : "off")}"));
+            this.Helper.Input.Suppress(e.Button);
+            return;
+        }
+        if (this.runner!.IsRunning && IsTakeControlInput(e.Button))
+        {
+            this.runner.Stop(JobOutcome.Partial, "The player took control, so the autopilot stopped.");
+            return;
+        }
+
+        if (e.Button != this.config.ChatKey)
             return;
         if (Game1.activeClickableMenu is ChatOverlayMenu open)
         {
