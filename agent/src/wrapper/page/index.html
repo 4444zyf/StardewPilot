@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>StardewPilot · Copilot settings</title>
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <h1>StardewPilot <span class="sub">Copilot settings</span></h1>
+  <span id="badge" class="badge">…</span>
+</header>
+
+<main>
+  <p id="no-token" class="notice error" hidden>
+    This page needs the link with its access key. Open it from the game: type <code>/settings</code> in the copilot chat (F8),
+    or use the link printed by <code>stardewpilot-agent setup</code>.
+  </p>
+
+  <section class="card" id="status-card">
+    <h2>Status</h2>
+    <p id="status-message" class="status-message">Loading…</p>
+    <p class="muted">Model: <strong id="status-model">none</strong></p>
+    <div class="row">
+      <button id="restart" type="button">Restart copilot</button>
+    </div>
+    <details id="errors-box" hidden>
+      <summary>Recent messages from pi</summary>
+      <pre id="errors"></pre>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2><span class="step">1</span> Sign in</h2>
+    <p class="muted">The copilot needs an AI model. Use a subscription you already pay for, an API key, or a model on your own computer.
+      Sign-ins are kept by pi on this computer; the game never sees them.</p>
+
+    <h3>Subscription</h3>
+    <div id="oauth-list" class="tiles"></div>
+
+    <h3>API key</h3>
+    <div class="row">
+      <input id="key-search" type="search" placeholder="Search providers" aria-label="Search providers">
+      <select id="key-provider" aria-label="Provider"></select>
+      <button id="key-add" type="button">Add key</button>
+    </div>
+
+    <details class="custom">
+      <summary><h3>Custom or local endpoint</h3></summary>
+      <p class="muted">For Ollama, llama.cpp, LM Studio or any OpenAI-compatible service.</p>
+      <form id="custom-form" class="grid">
+        <label>ID <input name="id" required pattern="[a-z0-9][a-z0-9\-]{0,40}" placeholder="ollama"></label>
+        <label>Name <input name="name" placeholder="Ollama on this PC"></label>
+        <label class="wide">Base URL <input name="baseUrl" required placeholder="http://localhost:11434/v1"></label>
+        <label>API type <select name="api"></select></label>
+        <label>API key <input name="apiKey" type="password" autocomplete="off" placeholder="leave empty if none"></label>
+        <label class="wide">Model IDs <input name="models" required placeholder="qwen3:14b, llama3.3"></label>
+        <div class="wide row"><button type="submit">Save endpoint</button> <span id="custom-result" class="muted"></span></div>
+      </form>
+    </details>
+
+    <h3>Signed in</h3>
+    <ul id="signed-in" class="list"><li class="muted">Nothing yet.</li></ul>
+  </section>
+
+  <section class="card">
+    <h2><span class="step">2</span> Choose a model</h2>
+    <p class="muted">Only models you are signed in for are listed. The copilot needs a model that can call tools; Test checks this.</p>
+    <div class="row">
+      <select id="model" aria-label="Model"></select>
+      <label class="inline">Thinking <select id="thinking"></select></label>
+    </div>
+    <div class="row">
+      <button id="test" type="button">Test</button>
+      <button id="save" type="button" class="primary">Save and restart copilot</button>
+    </div>
+    <p id="test-result" class="result" hidden></p>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary><h2>Advanced</h2></summary>
+      <fieldset>
+        <legend>pi settings folder</legend>
+        <label class="radio"><input type="radio" name="pifolder" value="own"> Keep the copilot's own (recommended). Its sign-ins and chats stay apart from any other use of pi.</label>
+        <label class="radio"><input type="radio" name="pifolder" value="shared"> Use my own pi setup (<code>~/.pi/agent</code>), with the sign-ins I already made there.</label>
+      </fieldset>
+      <p class="muted">Folder in use: <code id="pidir"></code> · pi <span id="piversion"></span></p>
+    </details>
+  </section>
+</main>
+
+<dialog id="login">
+  <form method="dialog" id="login-form">
+    <h2 id="login-title">Sign in</h2>
+    <div id="login-events"></div>
+    <div id="login-prompts"></div>
+    <p id="login-status" class="muted"></p>
+    <div class="row end">
+      <button id="login-cancel" type="button">Cancel</button>
+      <button id="login-close" type="button" class="primary" hidden>Done</button>
+    </div>
+  </form>
+</dialog>
+</body>
+</html>

@@ -48,13 +48,25 @@ public sealed class LauncherConfig
     /// <summary>Start pi automatically when the game starts.</summary>
     public bool Enabled { get; set; } = false;
 
+    /// <summary>
+    /// Start pi through the StardewPilot wrapper, which also serves the copilot settings page (sign-in, model choice).
+    /// False starts pi directly, as during development.
+    /// </summary>
+    public bool UseWrapper { get; set; } = true;
+
+    /// <summary>The Node.js executable that runs the wrapper (on PATH, or a full path). Needs Node 22.19 or newer.</summary>
+    public string NodeCommand { get; set; } = "node";
+
     /// <summary>The pi executable (on PATH, or a full path).</summary>
     public string PiCommand { get; set; } = "pi";
 
     /// <summary>Path to the extension entry (agent/src/index.ts). Empty: the copy shipped in the mod folder.</summary>
     public string ExtensionPath { get; set; } = "";
 
-    /// <summary>Optional model, for example 'openai/gpt-5'. Empty: pi's default.</summary>
+    /// <summary>
+    /// Optional model, for example 'openai/gpt-5'. With the wrapper this is only the first choice; the settings page decides after that.
+    /// Without the wrapper, empty means pi's default.
+    /// </summary>
     public string Model { get; set; } = "";
 }
 

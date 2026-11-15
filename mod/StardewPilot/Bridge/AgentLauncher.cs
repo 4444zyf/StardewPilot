@@ -13,6 +13,7 @@ internal sealed class AgentLauncher : IDisposable
 {
     private readonly IMonitor monitor;
     private Process? process;
+    private string command = "";
 
     public AgentLauncher(IMonitor monitor) => this.monitor = monitor;
 
@@ -29,15 +30,25 @@ internal sealed class AgentLauncher : IDisposable
             return;
         }
 
-        var info = new ProcessStartInfo(cfg.PiCommand)
+        // With the wrapper: node <agent>/src/wrapper/main.ts run. It runs pi and serves the settings page.
+        string wrapper = Path.Combine(Path.GetDirectoryName(extension)!, "wrapper", "main.ts");
+        bool useWrapper = cfg.UseWrapper && File.Exists(wrapper);
+        if (cfg.UseWrapper && !useWrapper)
+            this.monitor.Log($"Launcher: the wrapper was not found at {wrapper}; starting pi directly.", LogLevel.Warn);
+        this.command = useWrapper ? cfg.NodeCommand : cfg.PiCommand;
+
+        var info = new ProcessStartInfo(this.command)
         {
-            RedirectStandardInput = true, // RPC mode reads commands from stdin; keeping it open keeps pi running
+            RedirectStandardInput = true, // the child exits when stdin closes; keeping it open keeps it running
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             WorkingDirectory = Path.GetDirectoryName(extension)!,
         };
-        foreach (string arg in new[] { "--mode", "rpc", "--no-builtin-tools", "-e", extension })
+        string[] args = useWrapper
+            ? new[] { wrapper, "run", "--pi", cfg.PiCommand, "--extension", extension }
+            : new[] { "--mode", "rpc", "--no-builtin-tools", "-e", extension };
+        foreach (string arg in args)
             info.ArgumentList.Add(arg);
         if (cfg.Model.Length > 0)
         {
@@ -51,19 +62,21 @@ internal sealed class AgentLauncher : IDisposable
         }
         catch (Exception ex)
         {
-            this.monitor.Log($"Launcher: could not start '{cfg.PiCommand}': {ex.Message}. Install pi or set Launcher.PiCommand to its full path.", LogLevel.Error);
+            this.monitor.Log(useWrapper
+                ? $"Launcher: could not start '{cfg.NodeCommand}': {ex.Message}. Install Node.js 22.19 or newer, or set Launcher.NodeCommand to its full path."
+                : $"Launcher: could not start '{cfg.PiCommand}': {ex.Message}. Install pi or set Launcher.PiCommand to its full path.", LogLevel.Error);
             return;
         }
         if (this.process == null)
             return;
         // Drain output so pi never blocks on a full pipe. RPC events are not needed here; errors go to the SMAPI log.
         this.process.OutputDataReceived += (_, _) => { };
-        this.process.ErrorDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) this.monitor.Log($"pi: {e.Data}", LogLevel.Trace); };
+        this.process.ErrorDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data) && !e.Data.Contains("#t=")) this.monitor.Log($"agent: {e.Data}", LogLevel.Trace); };
         this.process.BeginOutputReadLine();
         this.process.BeginErrorReadLine();
         this.process.EnableRaisingEvents = true;
-        this.process.Exited += (_, _) => this.monitor.Log($"Launcher: pi exited (code {this.process?.ExitCode}).", LogLevel.Info);
-        this.monitor.Log($"Launcher: started pi (pid {this.process.Id}).", LogLevel.Info);
+        this.process.Exited += (_, _) => this.monitor.Log($"Launcher: {this.command} exited (code {this.process?.ExitCode}).", LogLevel.Info);
+        this.monitor.Log($"Launcher: started {(useWrapper ? "the agent wrapper" : "pi")} (pid {this.process.Id}).", LogLevel.Info);
     }
 
     public void Dispose()
@@ -72,8 +85,8 @@ internal sealed class AgentLauncher : IDisposable
         {
             if (this.IsRunning)
             {
-                this.process!.StandardInput.Close(); // pi exits when stdin closes
-                if (!this.process.WaitForExit(3000))
+                this.process!.StandardInput.Close(); // pi and the wrapper exit when stdin closes
+                if (!this.process.WaitForExit(5000)) // the wrapper gives pi 3 s
                     this.process.Kill(entireProcessTree: true);
             }
         }

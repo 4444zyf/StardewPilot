@@ -66,7 +66,14 @@ public sealed class ModEntry : Mod
         helper.Events.GameLoop.UpdateTicking += (_, _) => InputSim.BeforeGameUpdate();
         helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
         helper.Events.GameLoop.UpdateTicked += this.OnUpdateTicked;
-        helper.Events.GameLoop.SaveLoaded += (_, _) => this.Notify("save_loaded");
+        helper.Events.GameLoop.SaveLoaded += (_, _) =>
+        {
+            this.Notify("save_loaded");
+            if (!AgentState.Connected && WrapperStatus.Current.State is "needs_setup" or "error")
+                Toast.Show(new ChatEntry(ChatSender.System, WrapperStatus.NotConnectedHint() + " (F8 opens the chat)", DateTime.Now));
+        };
+        helper.ConsoleCommands.Add("pilot_settings", "Open the StardewPilot copilot settings page in the browser.", (_, _) =>
+            this.Monitor.Log(WrapperStatus.OpenSettings(this.Monitor), LogLevel.Info));
         helper.Events.GameLoop.DayStarted += (_, _) =>
         {
             this.tips.OnDayStarted();
@@ -268,10 +275,15 @@ public sealed class ModEntry : Mod
     /// <summary>The player typed in the overlay.</summary>
     private void SendPlayerMessage(string text)
     {
+        if (text.Trim().Equals("/settings", StringComparison.OrdinalIgnoreCase))
+        {
+            ChatLog.Add(ChatSender.System, WrapperStatus.OpenSettings(this.Monitor));
+            return;
+        }
         ChatLog.Add(ChatSender.Player, text);
         if (!AgentState.Connected)
         {
-            ChatLog.Add(ChatSender.System, "The agent is not connected. Start pi with the StardewPilot extension, then try again.");
+            ChatLog.Add(ChatSender.System, WrapperStatus.NotConnectedHint());
             return;
         }
         this.bridge?.Broadcast("chat/user_message", new { text });
@@ -353,7 +365,7 @@ public sealed class ModEntry : Mod
             }
             if (!AgentState.Connected)
             {
-                ChatLog.Add(ChatSender.System, "Self-play needs the agent. Start pi with the StardewPilot extension.");
+                ChatLog.Add(ChatSender.System, "Self-play needs the copilot. " + WrapperStatus.NotConnectedHint());
                 return;
             }
             this.selfPlay.Start();

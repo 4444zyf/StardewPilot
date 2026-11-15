@@ -130,10 +130,11 @@ internal sealed class ChatOverlayMenu : IClickableMenu
 
         // Status line above the input.
         string status = !AgentState.Connected
-            ? "Agent not connected. Start pi with the StardewPilot extension."
+            ? StardewPilot.Bridge.WrapperStatus.NotConnectedHint()
             : AgentState.Busy
                 ? "Thinking" + new string('.', (int)(Game1.currentGameTime.TotalGameTime.TotalSeconds * 2 % 4)) + (AgentState.Activity.Length > 0 ? $"  ({AgentState.Activity})" : "")
-                : "Enter to send, Esc to close. Only you can see this chat.";
+                : "Enter: send. Esc: close. /settings: copilot settings. Only you see this chat.";
+        status = Game1.parseText(status, Game1.smallFont, textWidth).Split('\n')[0]; // one line; the chat log has the full text
         b.DrawString(Game1.smallFont, status, new Vector2(left, this.input.Y - 36), Color.DimGray);
 
         this.input.Draw(b);

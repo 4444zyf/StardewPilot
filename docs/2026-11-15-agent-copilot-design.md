@@ -17,7 +17,7 @@ Two processes:
 1. **Bridge mod** (C#, SMAPI, .NET 6). Exposes game state and actions over a local WebSocket.
 2. **Agent** ([pi](https://github.com/earendil-works/pi), TypeScript, Node 22.19+). Runs alongside the game. A pi extension registers the bridge's state and actions as tools.
 
-pi cannot run inside the game, which is why there are two processes. During development pi is started by hand, so the agent can be restarted without restarting the game. A one-click launcher (the mod starting pi in RPC mode) comes later.
+pi cannot run inside the game, which is why there are two processes. During development pi is started by hand, so the agent can be restarted without restarting the game. For players, the mod starts a small Node wrapper that runs pi in RPC mode and serves a local settings page for sign-in and model choice; see [the settings and login design](2026-11-15-agent-settings-and-login-design.md).
 
 The bridge is our own code. Its schema stays MCP-compatible so pi is not a lock-in.
 
@@ -37,7 +37,7 @@ All model access goes through pi. The mod never handles credentials.
 
 Order of preference:
 
-1. Codex/ChatGPT subscription login through pi's `/login`. **Unconfirmed**: pi's docs describe OAuth login but do not name which subscriptions work, or whether the login carries into RPC mode. Check by running `/login` in step 1.
+1. Codex/ChatGPT subscription login. pi 1.5.2 has it built in as provider `openai-codex` ("OpenAI (ChatGPT Plus/Pro)"), and the settings page runs its sign-in. A real sign-in by the owner is still to be done.
 2. An OpenAI or other provider API key (billed per use).
 3. Local models (Ollama, llama.cpp) through pi's `models.json`.
 
@@ -123,4 +123,4 @@ Set up and checked on 2026-11-15. A test mod built against the installed game an
 - Verified: a co-op guest's view of a map is live when the map is "always active" or a player is on it; the state tools flag other maps as possibly stale.
 - New farms are full of weeds, stones and twigs that the game's pathfinder treats as walls; the autopilot clears a way through them with tools, as a player would.
 - SMAPI blocks mods from reflecting into its internals (so no simulated button presses through SMAPI). The fishing controller uses the rod's own functions, and holds the tool button for the minigame by setting the keyboard state the minigame reads.
-- Still unconfirmed: whether pi's `/login` covers a ChatGPT/Codex subscription (needs an interactive login by the owner).
+- pi 1.5.2 supports a ChatGPT/Codex subscription (provider `openai-codex`); an end-to-end sign-in by the owner is still to be done.

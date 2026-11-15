@@ -16,6 +16,8 @@
   <ItemGroup>
     <!-- Ship the pi extension inside the mod so the launcher works without the repo. -->
     <None Include="../../agent/src/*.ts" Link="agent/src/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../agent/src/wrapper/*.ts" Link="agent/src/wrapper/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../agent/src/wrapper/page/*" Link="agent/src/wrapper/page/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../agent/package.json" Link="agent/package.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

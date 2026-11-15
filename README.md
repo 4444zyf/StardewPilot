@@ -18,7 +18,7 @@ Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (p
 - Stardew Valley 1.6 on PC, with SMAPI 4.5+
 - .NET 6 SDK or newer (to build the mod)
 - Node.js 22.19+ and [pi](https://github.com/earendil-works/pi) 1.5+
-- A model provider configured in pi: a subscription login, an API key, or a local model
+- An AI model: a subscription (ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot and others), an API key, or a local model. You set this up on the copilot settings page; no terminal needed.
 
 ## Build and run
 
@@ -30,7 +30,17 @@ Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (p
 
 2. Start the game with SMAPI. The SMAPI console shows `Bridge listening on 127.0.0.1:45781`. On first run the mod writes a random token into its `config.json`, and writes the port and token to a connection file readable only by you (`~/.config/StardewPilot/bridge.json`, or `%APPDATA%\StardewPilot\bridge.json` on Windows).
 
-3. Start the agent. Either let the mod start it (set `Launcher.Enabled` to `true` in the mod's `config.json`; the extension ships inside the mod folder), or start it yourself from the repo root:
+3. Start the agent. The easy way: set `Launcher.Enabled` to `true` in the mod's `config.json` and restart the game. The mod then starts the agent wrapper, which runs pi for you.
+
+4. Set up the model. In the game press **F8** and type `/settings`. The copilot settings page opens in your browser:
+   - **Sign in** with a subscription, add an API key, or add a custom or local endpoint (Ollama, llama.cpp, any OpenAI-compatible service).
+   - **Choose a model**, press **Test** (it checks that the model can call tools), then **Save and restart copilot**.
+
+   You can also set up before starting the game: `node <mod folder>/agent/src/wrapper/main.ts setup` opens the same page.
+
+   Sign-ins are stored by pi in the copilot's own pi folder (`~/.config/StardewPilot/pi`, or `%APPDATA%\StardewPilot\pi` on Windows), separate from any other use of pi. Advanced settings on the page can switch to your normal `~/.pi/agent` instead. The game never sees keys or sign-ins. The page only listens on 127.0.0.1 and needs the private link the game opens.
+
+   For development you can still start pi yourself from the repo root, with pi's own `/login`:
 
    ```sh
    pi --no-builtin-tools -e ./agent/src/index.ts
@@ -71,9 +81,11 @@ Settings in the mod's `config.json`:
 | `SelfPlay.ToggleKey` | `F10` | Starts or stops self-play |
 | `SelfPlay.DailyRequestBudget` | `120` | Model requests per game day (0 for no limit) |
 | `SelfPlay.DailyTokenBudget` | `0` | Model tokens per game day (0 for no limit) |
-| `Launcher.Enabled` | `false` | Start pi together with the game (one-click) |
+| `Launcher.Enabled` | `false` | Start the agent together with the game (one-click) |
+| `Launcher.UseWrapper` | `true` | Start pi through the wrapper, which serves the settings page. `false` starts pi directly |
+| `Launcher.NodeCommand` | `node` | The Node.js executable that runs the wrapper |
 | `Launcher.PiCommand` | `pi` | The pi executable |
-| `Launcher.Model` | empty | Optional model for the launched agent, for example `openai/gpt-5` |
+| `Launcher.Model` | empty | Optional first model, for example `openai/gpt-5`. After that the settings page decides |
 
 ## Tools
 
@@ -117,7 +129,8 @@ The bridge speaks JSON-RPC with MCP method names (`initialize`, `tools/list`, `t
 
 ## Development
 
-- `cd agent && npm install && npm test`: tests the extension offline against recorded bridge messages (`agent/test/fixtures`).
+- `cd agent && npm install && npm test`: tests the extension offline against recorded bridge messages (`agent/test/fixtures`), and the wrapper's settings server and pi supervisor with fakes.
+- `node agent/src/wrapper/main.ts status`: shows the wrapper's state and model.
 - `scripts/restart-game.sh`: rebuilds the mod and restarts the game (Linux; starts SMAPI directly, so Steam need not run).
 - A release build (`dotnet build mod/StardewPilot -c Release`) also writes an installable zip next to the DLL.
 - Dev options in the mod's `config.json`: `Dev.AutoLoadSave` (a save folder name to load at the title screen) and `Dev.FreezeTime`.
