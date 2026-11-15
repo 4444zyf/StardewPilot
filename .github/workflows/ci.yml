@@ -1,0 +1,54 @@
+name: CI
+
+# Runs the parts that need no game: the agent and wrapper tests, the wrapper against the real pi,
+# and the mod's system-specific code. Windows is the point: nobody on the project has a Windows machine.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  agent:
+    name: Agent and wrapper (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+      - name: Install dependencies
+        run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Install pi (pinned)
+        run: npm install -g @earendil-works/pi-coding-agent@1.5.2
+      - name: Wrapper against the real pi
+        run: node test/ci/wrapper-smoke.ts
+
+  platform:
+    name: Mod system code (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            6.0.x
+            8.0.x
+      - name: Platform tests
+        run: dotnet run --project mod/Platform.Tests -c Release
