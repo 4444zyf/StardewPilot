@@ -11,7 +11,7 @@ See [the design](docs/2026-11-15-agent-copilot-design.md) for the full plan.
 
 ## Status
 
-Steps 1 to 3 of the build order work: the read-only bridge, the in-game guide (private chat overlay, proactive tips, instant warnings), and the commanded autopilot (the agent walks the farmer between maps and runs tasks such as planting, watering, shopping and shipping when you ask).
+Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (private chat overlay, proactive tips, instant warnings), the commanded autopilot (the agent walks the farmer between maps and runs tasks such as planting, watering, shopping and shipping when you ask), and self-play toward a goal you set. Fishing, the mines and combat are still left to the player (step 5).
 
 ## Requirements
 
@@ -49,6 +49,9 @@ Ask things like "what should I do today?", "what does Abigail like?" or "which c
 - **Autopilot**: ask in the chat ("plant my parsnip seeds and water them", "buy 5 cauliflower seeds"). The model plans; fixed C# routines do the work the way a player would, walking, spending energy and game time, and using the game's own menus and actions. Moving or using a tool yourself stops it at once; so does a cutscene, festival or dialogue. **F9** switches the autopilot off and on.
 - **Rules the model cannot override**: at 11:30pm work stops and the farmer goes to bed; tool use stops before energy runs out; shipping, selling, gifting and purchases over 500g ask you first in an in-game question ("Yes", "Yes, and don't ask again", "No"). After three failed actions in a row the agent must stop and explain.
 
+- **Self-play**: press **F10**, or ask "play by yourself, goal: earn 5,000g by summer". Without a goal the copilot follows a balanced first-year checklist. Each morning it writes a short plan for the day (shown in the chat; change it by telling the copilot), works through it, writes a summary at bedtime and goes to sleep. Moving, or pressing F10 again, hands control back. A daily model budget (`SelfPlay.DailyRequestBudget`) caps the cost; when it runs out the copilot stops, and goes to bed if it is late.
+- **Memory** lives in `Mods/StardewPilot/data/<farm>/player-<id>/` as plain files you can read and edit: `notes.md`, `goal.txt`, `plan.md` and `days/<date>.md`. It follows the game's save: what the copilot writes during a day is kept only if the day is saved (you sleep), just like the game. Each game day starts a fresh agent session seeded from these files.
+
 Settings in the mod's `config.json`:
 
 | Setting | Default | Meaning |
@@ -65,6 +68,9 @@ Settings in the mod's `config.json`:
 | `Autopilot.ConfirmSpendAbove` | `500` | Purchases above this ask first |
 | `Autopilot.AlwaysAllow` | all `false` | Standing permissions: `Ship`, `Sell`, `Spend`, `Gift`, `Trash` |
 | `Autopilot.FullSelfPlay` | `false` | No confirmations at all (other players' things in co-op still ask) |
+| `SelfPlay.ToggleKey` | `F10` | Starts or stops self-play |
+| `SelfPlay.DailyRequestBudget` | `120` | Model requests per game day (0 for no limit) |
+| `SelfPlay.DailyTokenBudget` | `0` | Model tokens per game day (0 for no limit) |
 
 ## Tools
 
@@ -99,6 +105,8 @@ Actions (each returns done, partly done or failed, with a reason):
 | `go_to_bed` | Walks home and sleeps |
 | `use_tool`, `interact` | Low-level fallbacks on one tile |
 | `stop_autopilot` | Stops the current action |
+
+Memory and self-play: `read_memory`, `write_notes`, `write_day_plan`, `write_day_summary`, `set_self_play`.
 
 The bridge speaks JSON-RPC with MCP method names (`initialize`, `tools/list`, `tools/call`), so other agent frameworks can use it too.
 

@@ -36,6 +36,8 @@ internal sealed class Macros
 
     private ModConfig Cfg => this.config();
 
+    public ModConfig Config => this.config();
+
     // ---------------------------------------------------------------- walking
 
     public IEnumerable WalkTo(JobContext ctx, string? location, Point? tile, string? npc)
@@ -785,7 +787,11 @@ internal sealed class Macros
             yield return s;
         Actions.SelectSafeHand();
         ctx.ExpectingMenu = true;
-        Actions.Interact(who.TilePoint);
+        // The villager may have stepped since we arrived: face them and use the game's own NPC interaction,
+        // which is what the action button calls when it hits a villager.
+        Actions.Face(who.TilePoint);
+        if (!who.checkAction(Game1.player, Game1.currentLocation))
+            Actions.Interact(who.TilePoint);
         foreach (object? s in Actions.Settle(ctx))
             yield return s;
         var lines = new List<string>();
@@ -811,7 +817,11 @@ internal sealed class Macros
         int giftsBefore = Game1.player.friendshipData.TryGetValue(who.Name, out Friendship f0) ? f0.GiftsToday : 0;
         Actions.Select(i => i == item);
         ctx.ExpectingMenu = true;
-        Actions.Interact(who.TilePoint);
+        // The villager may have stepped since we arrived: face them and use the game's own NPC interaction,
+        // which is what the action button calls when it hits a villager.
+        Actions.Face(who.TilePoint);
+        if (!who.checkAction(Game1.player, Game1.currentLocation))
+            Actions.Interact(who.TilePoint);
         foreach (object? s in Actions.Settle(ctx))
             yield return s;
         var lines = new List<string>();

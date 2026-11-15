@@ -10,6 +10,7 @@
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { BridgeClient, type McpTool, openWebSocket, readConnectionInfo, type Transport } from "./bridge-client.ts";
+import { FIRST_YEAR_CHECKLIST } from "./first-year-checklist.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 
 const STATUS_KEY = "stardewpilot";
@@ -39,6 +40,11 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 	const queuedTips: TipTrigger[] = [];
 	const readOnly = new Set<string>();
 	let failedActions = 0;
+	let selfPlay = false;
+	let actionsThisRun = 0;
+	let idleRuns = 0;
+	let newDayPending = false;
+	let stepTimer: ReturnType<typeof setTimeout> | undefined;
 	let reconnectTimer: ReturnType<typeof setInterval> | undefined;
 	let active = false;
 
@@ -88,6 +94,8 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 				description: tool.description,
 				parameters: tool.inputSchema as never,
 				annotations: { readOnlyHint: tool.annotations?.readOnlyHint ?? false },
+				// The farmer can only do one thing at a time: run actions one after another, never in parallel.
+				executionMode: isAction ? "sequential" : undefined,
 				async execute(_toolCallId, params, signal) {
 					const c = await ensureConnected();
 					if (!c) throw new Error(`Not connected to the game: ${lastError}`);
@@ -96,11 +104,13 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 					if (isAction) signal?.addEventListener("abort", onAbort, { once: true });
 					try {
 						const result = await c.callTool(tool.name, (params ?? {}) as Record<string, unknown>, isAction ? ACTION_TIMEOUT_MS : undefined);
-						if (isAction && tool.name !== "stop_autopilot" && actionFailed(result)) failedActions++;
+						if (isGameAction(tool.name) && actionFailed(result)) failedActions++;
 						return {
 							content: result.content,
 							details: undefined,
 							isError: result.isError === true,
+							// Going to bed ends the day: end this run so the next day starts in a fresh session.
+							terminate: tool.name === "go_to_bed" && !actionFailed(result) ? true : undefined,
 						};
 					} finally {
 						signal?.removeEventListener("abort", onAbort);
@@ -124,13 +134,25 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 				clientInfo: { name: "stardewpilot-pi", version: "0.1.0" },
 			});
 			settings = init.settings ?? {};
+			selfPlay = settings.selfPlay === true;
 			registerBridgeTools(await c.listTools());
 			c.onGameEvent((ev) => {
-				if (ev.type === "day_started") setStatus("🌱 connected · new day");
+				if (ev.type === "day_started") {
+					setStatus("🌱 connected · new day");
+					// Each game day gets a fresh agent session, seeded from memory.
+					newDayPending = true;
+					if (!running) startNewDay();
+					else
+						pi.sendMessage(
+							{ customType: "stardew-day-ended", content: "[A new game day has started] Stop here and reply in one line; a fresh session continues the new day.", display: true },
+							{ deliverAs: "steer" },
+						);
+				}
 			});
 			c.onNotification((method, params) => handleBridgeNotification(method, params));
 			client = c;
 			lastError = "";
+			if (selfPlay && !running) scheduleSelfPlayStep(2000); // self-play was already on (new session, or reconnect)
 			setStatus(`🌱 connected · game ${init.gameVersion ?? "?"}`);
 			return c;
 		} catch (err) {
@@ -162,6 +184,22 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 		} else if (method === "tips/trigger") {
 			queuedTips.push(p as unknown as TipTrigger);
 			if (!running) startNextTip();
+		} else if (method === "selfplay/changed") {
+			const was = selfPlay;
+			selfPlay = p.enabled === true;
+			idleRuns = 0;
+			if (selfPlay && !was && !running) {
+				pi.sendMessage(
+					{
+						customType: "stardew-selfplay",
+						content:
+							"[Self-play started by the player] Call read_memory. If there is no plan for today, write one with write_day_plan (toward the goal, or the default first-year plan if there is none). Then start working on it.",
+						display: true,
+					},
+					{ triggerTurn: true, deliverAs: "followUp" },
+				);
+			}
+			if (!selfPlay) cancelStep();
 		} else if (method === "tips/warning" && typeof p.text === "string") {
 			// Already shown to the player as fixed text; keep it as context for later answers.
 			pi.sendMessage(
@@ -181,20 +219,75 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 		);
 	}
 
+	/** Tools that make the farmer act (not reads, memory writes or self-play switches). */
+	function isGameAction(name: string): boolean {
+		// go_to_bed is a safety action (passing out costs gold): never blocked by the re-plan limit.
+		return !readOnly.has(name) && !name.startsWith("write_") && !["set_self_play", "stop_autopilot", "go_to_bed"].includes(name);
+	}
+
+	function cancelStep() {
+		if (stepTimer) clearTimeout(stepTimer);
+		stepTimer = undefined;
+	}
+
+	/** Ask the game whether self-play may continue, then send the next step (or wait and ask again). */
+	function scheduleSelfPlayStep(delayMs: number) {
+		cancelStep();
+		if (!selfPlay) return;
+		stepTimer = setTimeout(async () => {
+			stepTimer = undefined;
+			if (running || !selfPlay || newDayPending) return;
+			const c = await ensureConnected();
+			if (!c) return scheduleSelfPlayStep(10_000);
+			let next: { go?: boolean; wait?: boolean; waitSeconds?: number; brief?: string; reason?: string };
+			try {
+				next = await c.request("selfplay/next");
+			} catch {
+				return scheduleSelfPlayStep(10_000);
+			}
+			if (next.go) {
+				pi.sendMessage(
+					{
+						customType: "stardew-selfplay",
+						content: `[Self-play] ${next.brief ?? ""} Continue with today's plan: do the next task with the action tools. If the plan is done, pick something useful toward the goal, or write the day summary and go to bed if it is evening.`,
+						display: true,
+					},
+					{ triggerTurn: true, deliverAs: "followUp" },
+				);
+			} else if (next.wait) {
+				scheduleSelfPlayStep((next.waitSeconds ?? 3) * 1000);
+			} else {
+				selfPlay = false;
+			}
+		}, delayMs);
+		stepTimer.unref?.();
+	}
+
+	/** Start a fresh pi session for the new game day (through a command, which may replace the session). */
+	function startNewDay() {
+		newDayPending = false;
+		cancelStep();
+		pi.sendUserMessage("/stardew-newday", { expandPromptTemplates: true });
+	}
+
 	pi.on("agent_start", async () => {
+		cancelStep();
+		actionsThisRun = 0;
 		running = true;
 		failedActions = 0;
 		client?.notify("agent/status", { busy: true });
 	});
 
 	pi.on("tool_execution_start", async (event) => {
+		if (isGameAction(event.toolName)) actionsThisRun++;
 		client?.notify("agent/status", { busy: true, activity: describeTool(event.toolName) });
 	});
 
-	// Send each finished answer to the in-game chat.
+	// Send each finished answer to the in-game chat, and count model use for the daily budget.
 	pi.on("message_end", async (event) => {
-		const message = event.message as { role?: string; content?: unknown };
+		const message = event.message as { role?: string; content?: unknown; usage?: { totalTokens?: number } };
 		if (message.role !== "assistant" || !Array.isArray(message.content)) return;
+		client?.notify("agent/usage", { requests: 1, tokens: message.usage?.totalTokens ?? 0 });
 		const parts = message.content as Array<{ type: string; text?: string }>;
 		if (parts.some((part) => part.type === "toolCall")) return; // a step, not the answer
 		const text = parts
@@ -205,11 +298,34 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 		if (text) client?.notify("chat/agent_message", { text, kind: runKind });
 	});
 
-	pi.on("agent_settled", async () => {
+	pi.on("agent_settled", async (event) => {
 		running = false;
 		runKind = "reply";
 		client?.notify("agent/status", { busy: false });
-		if (queuedTips.length > 0) startNextTip();
+		if (newDayPending) return startNewDay();
+		if (queuedTips.length > 0) return startNextTip();
+		if (!selfPlay) return;
+		if ((event as { aborted?: boolean }).aborted) {
+			// The player pressed Escape in pi: pause self-play.
+			selfPlay = false;
+			void client?.callTool("set_self_play", { enabled: false }).catch(() => {});
+			return;
+		}
+		if (failedActions >= MAX_FAILED_ACTIONS) {
+			// The agent hit the re-plan limit and has explained; hand back to the player.
+			selfPlay = false;
+			void client?.callTool("set_self_play", { enabled: false }).catch(() => {});
+			return;
+		}
+		// A step that did nothing twice in a row means the agent is stuck or done: pause and let the player decide.
+		idleRuns = actionsThisRun === 0 ? idleRuns + 1 : 0;
+		if (idleRuns >= 2) {
+			selfPlay = false;
+			void client?.callTool("set_self_play", { enabled: false }).catch(() => {});
+			client?.notify("chat/agent_message", { text: "I paused self-play because I had nothing useful left to do. Press F10 or ask me to continue.", kind: "reply" });
+			return;
+		}
+		scheduleSelfPlayStep(1000);
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -233,7 +349,7 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 			return { block: true, reason: `${event.toolName} is not a Stardew tool and is disabled in StardewPilot.` };
 		}
 		// At most two re-plans: after three failed actions, stop acting and explain.
-		if (!readOnly.has(event.toolName) && event.toolName !== "stop_autopilot" && failedActions >= MAX_FAILED_ACTIONS) {
+		if (isGameAction(event.toolName) && failedActions >= MAX_FAILED_ACTIONS) {
 			return {
 				block: true,
 				reason: `${failedActions} actions have failed in a row. Do not try again: stop and tell the player what went wrong and what they could do.`,
@@ -256,6 +372,31 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 		};
 	});
 
+	pi.registerCommand("stardew-newday", {
+		description: "Start a fresh session for the new game day (used automatically)",
+		handler: async (_args, ctx) => {
+			const c = await ensureConnected();
+			if (!c) return;
+			let seed: MemorySeed;
+			try {
+				seed = await c.request<MemorySeed>("memory/seed");
+			} catch {
+				return;
+			}
+			const content = daySeedMessage(seed);
+			const play = seed.selfPlay?.enabled === true;
+			// Everything used inside withSession is plain data: the old extension instance is gone by then.
+			await ctx.newSession({
+				withSession: async (fresh) => {
+					await fresh.sendMessage(
+						{ customType: "stardew-day", content, display: true },
+						play ? { triggerTurn: true } : { deliverAs: "nextTurn" },
+					);
+				},
+			});
+		},
+	});
+
 	pi.registerCommand("stardew", {
 		description: "Show or retry the StardewPilot game connection",
 		handler: async (_args, ctx) => {
@@ -268,6 +409,7 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 }
 
 interface BridgeSettings {
+	selfPlay?: boolean;
 	gameLanguage?: string;
 	tellMeEverything?: boolean;
 	chattiness?: string;
@@ -306,4 +448,31 @@ export function actionFailed(result: { content: Array<{ text: string }>; isError
 	} catch {
 		return false;
 	}
+}
+
+interface MemorySeed {
+	date?: string;
+	goal?: string | null;
+	notes?: string | null;
+	todayPlan?: string | null;
+	recentDays?: Array<{ date: string; summary: string }>;
+	selfPlay?: { enabled?: boolean; requestBudget?: number | null };
+}
+
+/** The first message of each day's session: what the agent remembers, and what to do now. */
+export function daySeedMessage(seed: MemorySeed): string {
+	const parts = [`[New game day: ${seed.date ?? "?"}]`];
+	parts.push(seed.goal ? `Standing goal: ${seed.goal}` : `No goal set by the player. ${FIRST_YEAR_CHECKLIST}`);
+	if (seed.notes) parts.push(`Your notes:\n${seed.notes}`);
+	if (seed.recentDays?.length) parts.push(`Recent days (newest first):\n${seed.recentDays.map((d) => d.summary.trim()).join("\n\n")}`);
+	else parts.push("No earlier days recorded.");
+	if (seed.todayPlan) parts.push(`Today's plan so far:\n${seed.todayPlan}`);
+	if (seed.selfPlay?.enabled) {
+		parts.push(
+			"Self-play is on. Check get_status and get_crops, write today's plan with write_day_plan (short, ordered, toward the goal), then start on the first task with the action tools. In the evening call write_day_summary, then go_to_bed.",
+		);
+	} else {
+		parts.push("Self-play is off: wait for the player's questions or commands.");
+	}
+	return parts.join("\n\n");
 }

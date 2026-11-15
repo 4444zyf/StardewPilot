@@ -44,7 +44,9 @@ test("registers bridge tools and leaves only Stardew tools active", async () => 
 	await pi.fire("session_start");
 	assert.ok(pi.tools.has("get_status"));
 	assert.ok(pi.active.length >= 10);
-	assert.ok(pi.active.every((n) => n.startsWith("get_")), `only bridge tools active, got ${pi.active}`);
+	assert.ok(pi.active.every((n) => pi.tools.has(n)), `only bridge tools active, got ${pi.active}`);
+	for (const builtin of ["read", "bash", "edit", "write"]) assert.ok(!pi.active.includes(builtin), `${builtin} must be off`);
+	assert.deepEqual([...pi.active].sort(), [...pi.tools.keys()].sort());
 	assert.ok(pi.statuses.some((s) => s.includes("connected")));
 });
 
@@ -181,8 +183,9 @@ test("after the first try and two re-plans fail, further actions are blocked", a
 	const blocked = await pi.fire("tool_call", { toolName: "water_crops", input: {} });
 	assert.equal(blocked?.block, true);
 	assert.match(blocked.reason, /tell the player/);
-	// Reading state is still allowed, and a new run starts fresh.
+	// Reading state and writing memory are still allowed, and a new run starts fresh.
 	assert.equal(await pi.fire("tool_call", { toolName: "get_status", input: {} }), undefined);
+	assert.equal(await pi.fire("tool_call", { toolName: "write_notes", input: {} }), undefined);
 	await pi.fire("agent_start");
 	assert.equal(await pi.fire("tool_call", { toolName: "water_crops", input: {} }), undefined);
 });

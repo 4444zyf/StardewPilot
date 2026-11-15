@@ -120,6 +120,18 @@ internal static class ActionTools
                 ("item", Schema.String("Item name."), true)),
             a => ctx => macros.Gift(ctx, a.Str("npc")!, a.Str("item")!));
 
+        Action("fish",
+            "Fish from the nearest open water in a map (default the current one): casts, waits for a bite and plays the fishing minigame. Needs a fishing rod; each cast costs energy.",
+            Schema.Object(
+                ("location", Schema.String("Map with water, for example Beach, Forest, Mountain, Town. Default the current map."), false),
+                ("catches", Schema.Integer("How many fish to catch. Default 3."), false)),
+            a => ctx => Fishing.Fish(ctx, macros.Config, a.Str("location"), Math.Clamp(a.Int("catches") ?? 3, 1, 30)));
+
+        Action("explore_mines",
+            "Go down into the mines a number of floors: takes ladders, breaks rocks with the pickaxe to find them, and fights monsters next to the farmer with the weapon. Stops when health or energy is low.",
+            Schema.Object(("floors", Schema.Integer("How many floors to go down. Default 3."), false)),
+            a => ctx => Mining.Descend(ctx, macros.Config, Math.Clamp(a.Int("floors") ?? 3, 1, 20)));
+
         Action("go_to_bed",
             "Walk home and go to sleep, ending the day (the game saves overnight).",
             Schema.Object(),

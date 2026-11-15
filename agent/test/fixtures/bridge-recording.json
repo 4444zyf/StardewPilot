@@ -8,10 +8,72 @@
     "capabilities": {
       "tools": {}
     },
-    "gameVersion": "1.6.15"
+    "gameVersion": "1.6.15",
+    "settings": {
+      "gameLanguage": "en",
+      "tellMeEverything": false,
+      "chattiness": "Talkative",
+      "selfPlay": false
+    }
   },
   "tools/list": {
     "tools": [
+      {
+        "name": "buy_items",
+        "description": "Walk to the shop that sells an item and buy it through the shop menu. Fails if the shop is closed or the farmer cannot afford it. Large purchases ask the player first.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "item": {
+              "type": "string",
+              "description": "Item name, for example 'Cauliflower Seeds'."
+            },
+            "count": {
+              "type": "integer",
+              "description": "How many to buy."
+            },
+            "shop": {
+              "type": "string",
+              "description": "Optional shop id. Default: the first shop that sells it.",
+              "enum": [
+                "SeedShop",
+                "Joja",
+                "FishShop",
+                "Blacksmith",
+                "AnimalShop",
+                "Saloon",
+                "Carpenter",
+                "Hospital"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "item",
+            "count"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "collect_forage",
+        "description": "Pick up all forage (wild plants, shells and similar) on a map, default the current one.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "Map name. Default the current map."
+            }
+          },
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
       {
         "name": "get_bundles",
         "description": "Community Center bundles the farmer can see: each room's bundles with items still needed and items already given. Returns why if bundles are not visible yet or the farm chose Joja.",
@@ -111,7 +173,7 @@
       },
       {
         "name": "get_location",
-        "description": "Describe a map: size, exits (warps and doors with their target maps), buildings, NPCs and players present, forage, machines and their output, chests and other notable objects. Defaults to the farmer's current map.",
+        "description": "Describe a map: size, exits (warps and doors with their target maps), buildings, NPCs and players present, forage, machines and their output, chests (including unopened gift boxes and their contents) and other objects. Defaults to the farmer's current map, so call it without arguments to see where the farmer is standing.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -155,6 +217,36 @@
         }
       },
       {
+        "name": "get_shop_stock",
+        "description": "What a shop sells today and at what price (does not need the shop to be open). Shops: SeedShop (Pierre), Joja, FishShop (Willy), Blacksmith (Clint), AnimalShop (Marnie), Saloon (Gus), Carpenter (Robin), Hospital.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "shop": {
+              "type": "string",
+              "description": "Shop id.",
+              "enum": [
+                "SeedShop",
+                "Joja",
+                "FishShop",
+                "Blacksmith",
+                "AnimalShop",
+                "Saloon",
+                "Carpenter",
+                "Hospital"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "shop"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
         "name": "get_skills",
         "description": "Skill levels, experience points and professions.",
         "inputSchema": {
@@ -177,6 +269,439 @@
         "annotations": {
           "readOnlyHint": true
         }
+      },
+      {
+        "name": "give_gift",
+        "description": "Walk to a villager and give them an item from the backpack. Asks the player first unless they gave standing permission.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "npc": {
+              "type": "string",
+              "description": "Villager name."
+            },
+            "item": {
+              "type": "string",
+              "description": "Item name."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "npc",
+            "item"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "go_to_bed",
+        "description": "Walk home and go to sleep, ending the day (the game saves overnight).",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "harvest_crops",
+        "description": "Harvest every ready crop on a map (default Farm), optionally only one kind. Stops if the backpack fills up.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "Map name. Default Farm."
+            },
+            "crop": {
+              "type": "string",
+              "description": "Only harvest this crop, for example Parsnip."
+            }
+          },
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "interact",
+        "description": "Low-level fallback: walk next to a tile in the current map and press the action button on it (open, pick up, read a sign). Returns any dialogue shown.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "integer",
+              "description": "Tile x."
+            },
+            "y": {
+              "type": "integer",
+              "description": "Tile y."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "x",
+            "y"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "plant_seeds",
+        "description": "Plant seeds from the backpack: uses empty tilled soil first, otherwise clears weeds, stones and twigs and tills new soil near the farmhouse. Waters them afterwards unless it is raining.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "seeds": {
+              "type": "string",
+              "description": "Seed item name, for example 'Parsnip Seeds'."
+            },
+            "count": {
+              "type": "integer",
+              "description": "How many to plant. Default all of them."
+            },
+            "location": {
+              "type": "string",
+              "description": "Map name. Default Farm."
+            },
+            "water": {
+              "type": "boolean",
+              "description": "Water after planting. Default true."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "seeds"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "read_memory",
+        "description": "What you remember about this farm: the standing goal, your notes (goals, the player's preferences, what you learned), today's plan, and summaries of recent days. Also self-play state and today's model budget.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": true
+        }
+      },
+      {
+        "name": "set_self_play",
+        "description": "Start or stop self-play, where you play by yourself toward a standing goal. Only when the player asks. Optionally set the goal in plain language; without one, follow the default first-year checklist.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "true to start, false to stop."
+            },
+            "goal": {
+              "type": "string",
+              "description": "Standing goal, for example 'earn 10,000g by summer' or 'finish the spring bundles'."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "enabled"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "ship_items",
+        "description": "Put items from the backpack into the farm's shipping bin (sold overnight). Always asks the player first unless they gave standing permission. Keeps one of any item a Community Center bundle still needs unless includeBundleItems is true.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "item": {
+                    "type": "string",
+                    "description": "Item name."
+                  },
+                  "count": {
+                    "type": "integer",
+                    "description": "How many. Default all."
+                  }
+                },
+                "additionalProperties": false,
+                "required": [
+                  "item"
+                ]
+              },
+              "description": "Items to ship."
+            },
+            "includeBundleItems": {
+              "type": "boolean",
+              "description": "Also ship items a bundle still needs. Default false."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "items"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "stop_autopilot",
+        "description": "Stop whatever the autopilot is doing and hand control back to the player.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "store_in_chest",
+        "description": "Put items from the backpack into a chest (the nearest one in the map, or the one at x, y).",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "Item name."
+              },
+              "description": "Items to store."
+            },
+            "allButTools": {
+              "type": "boolean",
+              "description": "Store everything except tools."
+            },
+            "location": {
+              "type": "string",
+              "description": "Map with the chest. Default the current map."
+            },
+            "x": {
+              "type": "integer",
+              "description": "Chest tile x."
+            },
+            "y": {
+              "type": "integer",
+              "description": "Chest tile y."
+            }
+          },
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "take_from_chest",
+        "description": "Take an item out of a chest (the nearest one in the map, or the one at x, y).",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "item": {
+              "type": "string",
+              "description": "Item name."
+            },
+            "count": {
+              "type": "integer",
+              "description": "How many. Default all."
+            },
+            "location": {
+              "type": "string",
+              "description": "Map with the chest. Default the current map."
+            },
+            "x": {
+              "type": "integer",
+              "description": "Chest tile x."
+            },
+            "y": {
+              "type": "integer",
+              "description": "Chest tile y."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "item"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "talk_to",
+        "description": "Walk to a villager and talk to them (raises friendship once a day). Returns what they said.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "npc": {
+              "type": "string",
+              "description": "Villager name."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "npc"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "use_tool",
+        "description": "Low-level fallback: walk next to a tile in the current map and use a tool on it (Axe, Hoe, Pickaxe, Watering Can, Scythe).",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string",
+              "description": "Tool name."
+            },
+            "x": {
+              "type": "integer",
+              "description": "Tile x."
+            },
+            "y": {
+              "type": "integer",
+              "description": "Tile y."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "tool",
+            "x",
+            "y"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "walk_to",
+        "description": "Walk the farmer to a map, a tile, or next to a villager. Crosses maps using doors and map edges, and respects shop hours. Give location (and optionally x, y), or npc.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "Map name, for example Town, SeedShop, Beach, FarmHouse. Defaults to the current map."
+            },
+            "x": {
+              "type": "integer",
+              "description": "Tile x in that map."
+            },
+            "y": {
+              "type": "integer",
+              "description": "Tile y in that map."
+            },
+            "npc": {
+              "type": "string",
+              "description": "Walk next to this villager instead."
+            }
+          },
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "water_crops",
+        "description": "Water every crop that needs it on a map (default Farm), refilling the watering can at the nearest water when empty. Skips if it is raining there.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "location": {
+              "type": "string",
+              "description": "Map name. Default Farm."
+            }
+          },
+          "additionalProperties": false
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "write_day_plan",
+        "description": "Write today's plan: a short ordered list of what to do today and why. The player sees it in the chat and can change it by telling you.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "plan": {
+              "type": "string",
+              "description": "Short ordered list, one task per line."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "plan"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "write_day_summary",
+        "description": "Write the summary of today: what got done, money, problems, and what tomorrow should start with. Call it before going to bed.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string",
+              "description": "A few short lines."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "summary"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
+      },
+      {
+        "name": "write_notes",
+        "description": "Replace your notes for this farm (plain text the player can read and edit). Keep what is still true; add what you learned. Saved when the game saves at night.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "The full new notes."
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "text"
+          ]
+        },
+        "annotations": {
+          "readOnlyHint": false
+        }
       }
     ]
   },
@@ -185,7 +710,7 @@
       "content": [
         {
           "type": "text",
-          "text": "{\"saveLoaded\":true,\"farmer\":\"Pilot\",\"farm\":\"Test\",\"multiplayer\":\"single-player\",\"date\":{\"season\":\"spring\",\"day\":3,\"year\":1,\"weekday\":\"Wed\"},\"time\":\"6:00am\",\"timeValue\":600,\"weatherToday\":\"Rain\",\"weatherTomorrow\":\"Rain\",\"dailyLuck\":0.059,\"money\":500,\"energy\":{\"current\":270,\"max\":270},\"health\":{\"current\":100,\"max\":100},\"location\":\"FarmHouse\",\"locationDisplayName\":\"Test Farm\",\"tile\":{\"x\":9,\"y\":9},\"facing\":\"right\",\"heldItem\":{\"name\":\"Axe\",\"id\":\"(T)Axe\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true},\"toolbarSlot\":0,\"state\":{\"eventRunning\":false,\"festival\":false,\"paused\":false,\"canMove\":true}}"
+          "text": "{\"saveLoaded\":true,\"farmer\":\"Pilot\",\"farm\":\"Test\",\"multiplayer\":\"single-player\",\"date\":{\"season\":\"spring\",\"day\":5,\"year\":1,\"weekday\":\"Fri\"},\"time\":\"7:10am\",\"timeValue\":710,\"weatherToday\":\"Sun\",\"weatherTomorrow\":\"Sun\",\"dailyLuck\":-0.069,\"money\":510,\"energy\":{\"current\":212,\"max\":270},\"health\":{\"current\":100,\"max\":100},\"location\":\"BusStop\",\"locationDisplayName\":\"Bus Stop\",\"tile\":{\"x\":28,\"y\":16},\"facing\":\"left\",\"heldItem\":{\"name\":\"Watering Can\",\"id\":\"(T)WateringCan\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true,\"waterLeft\":26},\"toolbarSlot\":2,\"state\":{\"eventRunning\":false,\"festival\":false,\"paused\":false,\"canMove\":true}}"
         }
       ],
       "isError": false
@@ -194,7 +719,7 @@
       "content": [
         {
           "type": "text",
-          "text": "{\"capacity\":12,\"used\":5,\"selectedSlot\":0,\"money\":500,\"slots\":[{\"slot\":0,\"item\":{\"name\":\"Axe\",\"id\":\"(T)Axe\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true}},{\"slot\":1,\"item\":{\"name\":\"Hoe\",\"id\":\"(T)Hoe\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true}},{\"slot\":2,\"item\":{\"name\":\"Watering Can\",\"id\":\"(T)WateringCan\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true,\"waterLeft\":40}},{\"slot\":3,\"item\":{\"name\":\"Pickaxe\",\"id\":\"(T)Pickaxe\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true}},{\"slot\":4,\"item\":{\"name\":\"Scythe\",\"id\":\"(W)47\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true}}]}"
+          "text": "{\"capacity\":12,\"used\":11,\"selectedSlot\":2,\"money\":510,\"slots\":[{\"slot\":0,\"item\":{\"name\":\"Axe\",\"id\":\"(T)Axe\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true}},{\"slot\":1,\"item\":{\"name\":\"Hoe\",\"id\":\"(T)Hoe\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true}},{\"slot\":2,\"item\":{\"name\":\"Watering Can\",\"id\":\"(T)WateringCan\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true,\"waterLeft\":26}},{\"slot\":3,\"item\":{\"name\":\"Pickaxe\",\"id\":\"(T)Pickaxe\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true}},{\"slot\":4,\"item\":{\"name\":\"Scythe\",\"id\":\"(W)47\",\"stack\":1,\"category\":\"Tool\",\"isTool\":true}},{\"slot\":5,\"item\":{\"name\":\"Daffodil\",\"id\":\"(O)18\",\"stack\":1,\"category\":\"Forage\",\"sellPrice\":30}},{\"slot\":6,\"item\":{\"name\":\"Clay\",\"id\":\"(O)330\",\"stack\":1,\"category\":\"Resource\",\"sellPrice\":20}},{\"slot\":7,\"item\":{\"name\":\"Fiber\",\"id\":\"(O)771\",\"stack\":1,\"category\":\"Resource\",\"sellPrice\":1}},{\"slot\":8,\"item\":{\"name\":\"Stone\",\"id\":\"(O)390\",\"stack\":1,\"category\":\"Resource\",\"sellPrice\":2}},{\"slot\":9,\"item\":{\"name\":\"Dandelion\",\"id\":\"(O)22\",\"stack\":1,\"category\":\"Forage\",\"sellPrice\":40}},{\"slot\":10,\"item\":{\"name\":\"Leek\",\"id\":\"(O)20\",\"stack\":1,\"category\":\"Forage\",\"sellPrice\":60}}]}"
         }
       ],
       "isError": false
@@ -203,7 +728,7 @@
       "content": [
         {
           "type": "text",
-          "text": "{\"location\":\"Farm\",\"possiblyStale\":false,\"totals\":{\"crops\":0,\"ready\":0,\"needWater\":0,\"dead\":0,\"emptyTilledTiles\":0},\"groups\":[]}"
+          "text": "{\"location\":\"Farm\",\"possiblyStale\":false,\"totals\":{\"crops\":14,\"ready\":0,\"needWater\":0,\"dead\":0,\"emptyTilledTiles\":0},\"groups\":[{\"crop\":\"Parsnip\",\"count\":14,\"ready\":0,\"needWater\":0,\"dead\":0,\"inPots\":0,\"nextHarvestInDays\":4}]}"
         }
       ],
       "isError": false

@@ -1,0 +1,208 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using Microsoft.Xna.Framework;
+using StardewModdingAPI;
+using StardewPilot.Tools;
+using StardewValley;
+using StardewValley.Menus;
+using StardewValley.Tools;
+
+namespace StardewPilot.Autopilot;
+
+/// <summary>
+/// Fishing controller. Everything goes through the tool button, pressed via <see cref="InputSim"/>:
+/// hold to charge the cast, release to cast, press when a fish nibbles, then play the minigame by
+/// holding the button whenever the fish is above the green bar.
+/// </summary>
+internal static class Fishing
+{
+    public static IEnumerable Fish(JobContext ctx, ModConfig cfg, string? location, int catches)
+    {
+        if (!InputSim.Available)
+            throw JobContext.Fail("Fishing needs SMAPI's input layer, which is not available in this SMAPI version.");
+        FishingRod rod = Actions.FindTool<FishingRod>() ?? throw JobContext.Fail("There is no fishing rod in the backpack.");
+        GameLocation loc = StateTools.ResolveLocation(location);
+        foreach (object? s in Navigation.WalkTo(ctx, loc.NameOrUniqueName, null))
+            yield return s;
+        if (!loc.canFishHere())
+            throw JobContext.Fail($"You can't fish in {loc.DisplayName}.");
+
+        List<(Point stand, int dir)> spots = FindSpots(loc);
+        if (spots.Count == 0)
+            throw JobContext.Fail($"No open water to fish from in {loc.DisplayName}.");
+
+        var caught = new List<string>();
+        int spotIndex = 0, misses = 0;
+        bool standing = false;
+        while (caught.Count < catches)
+        {
+            if (Game1.player.Stamina <= Actions.EnergyReserve(cfg) + 8)
+                throw JobContext.Partial($"Stopped fishing to keep energy in reserve after {caught.Count} catches.");
+            if (Game1.player.isInventoryFull())
+                throw JobContext.Partial($"The backpack is full after {caught.Count} catches.");
+            if (spotIndex >= spots.Count || misses >= 4)
+                break;
+
+            var (stand, dir) = spots[spotIndex];
+            if (!standing)
+            {
+                bool reached = true;
+                IEnumerator walk = Navigation.WalkWithinMap(ctx, stand, adjacent: false).GetEnumerator();
+                while (true)
+                {
+                    bool more;
+                    try { more = walk.MoveNext(); }
+                    catch (JobStop) { reached = false; break; }
+                    if (!more) break;
+                    yield return walk.Current;
+                }
+                if (!reached || Game1.player.TilePoint != stand) { spotIndex++; continue; }
+                standing = true;
+            }
+            Game1.player.faceDirection(dir);
+            Game1.player.CurrentToolIndex = Game1.player.Items.IndexOf(rod);
+            var before = Game1.player.Items.Where(i => i != null).GroupBy(i => i.QualifiedItemId).ToDictionary(g => g.Key, g => g.Sum(i => i.Stack));
+
+            // Cast: hold to charge to full power, then let go.
+            ctx.ExpectingMenu = true;
+            ctx.Progress("casting");
+            InputSim.Hold(InputSim.ToolButton);
+            for (int i = 0; i < 90 && !(rod.castingPower >= 0.95f); i++) { ctx.Touch(); yield return null; }
+            InputSim.Release(InputSim.ToolButton);
+            for (int i = 0; i < 300 && !rod.isFishing; i++) { ctx.Touch(); yield return null; }
+            if (!rod.isFishing)
+            {
+                // The bobber did not land in fishable water: try the next spot.
+                foreach (object? s in WaitForFarmerFree(ctx)) yield return s;
+                spotIndex++; standing = false; misses++;
+                continue;
+            }
+
+            // Wait for a bite (up to about a minute), then strike.
+            ctx.Progress("waiting for a bite");
+            for (int i = 0; i < 60 * 60 && !rod.isNibbling && rod.isFishing; i++) { ctx.Touch(); yield return null; }
+            if (!rod.isNibbling)
+            {
+                Tap(); // reel in and try again
+                foreach (object? s in WaitForFarmerFree(ctx)) yield return s;
+                misses++;
+                continue;
+            }
+            Tap();
+            yield return null;
+            yield return null;
+
+            // The minigame (no minigame for trash: it comes straight out).
+            for (int i = 0; i < 60 * 60 && (Game1.activeClickableMenu is BobberBar || rod.isReeling); i++)
+            {
+                ctx.Touch();
+                if (Game1.activeClickableMenu is BobberBar bar)
+                {
+                    float fish = bar.bobberPosition + 16f;
+                    float barCenter = bar.bobberBarPos + bar.bobberBarHeight / 2f;
+                    float predicted = barCenter + bar.bobberBarSpeed * 8f;
+                    if (fish < predicted) InputSim.Hold(InputSim.ToolButton);
+                    else InputSim.Release(InputSim.ToolButton);
+                }
+                yield return null;
+            }
+            InputSim.Release(InputSim.ToolButton);
+
+            // Treasure chest: take everything.
+            for (int i = 0; i < 120; i++)
+            {
+                if (Game1.activeClickableMenu is ItemGrabMenu grab)
+                {
+                    foreach (Item item in grab.ItemsToGrabMenu.actualInventory.Where(x => x != null).ToList())
+                    {
+                        if (Game1.player.addItemToInventory(item) == null)
+                            grab.ItemsToGrabMenu.actualInventory.Remove(item);
+                    }
+                    grab.exitThisMenu();
+                    break;
+                }
+                if (!rod.fishCaught && !rod.showingTreasure && Game1.activeClickableMenu == null && !rod.pullingOutOfWater)
+                    break;
+                // Holding up the fish: one press puts it away.
+                if (rod.fishCaught && i > 30 && i % 30 == 0)
+                    Tap();
+                ctx.Touch();
+                yield return null;
+            }
+            foreach (object? s in WaitForFarmerFree(ctx)) yield return s;
+            ctx.ExpectingMenu = false;
+
+            var after = Game1.player.Items.Where(i => i != null).GroupBy(i => i.QualifiedItemId).ToDictionary(g => g.Key, g => g.Sum(i => i.Stack));
+            var gained = after.Where(kv => kv.Value > before.GetValueOrDefault(kv.Key)).Select(kv => ItemRegistry.GetDataOrErrorItem(kv.Key).DisplayName).ToList();
+            if (gained.Count > 0)
+            {
+                caught.AddRange(gained);
+                misses = 0;
+                ctx.Progress($"fishing ({caught.Count} caught)");
+            }
+            else
+            {
+                misses++;
+            }
+        }
+        ctx.ExpectingMenu = false;
+        InputSim.ReleaseAll();
+        ctx.Report["caught"] = caught.GroupBy(n => n).Select(g => $"{g.Key} x{g.Count()}");
+        ctx.Report["energy"] = (int)Game1.player.Stamina;
+        if (caught.Count < catches)
+            ctx.Problems.Add($"Caught {caught.Count} of {catches}; the fish got away or no spot worked.");
+    }
+
+    private static void Tap()
+    {
+        // Pressed for one tick: SMAPI applies the override on the next update.
+        InputSim.Hold(InputSim.ToolButton);
+        DelayedRelease = 2;
+    }
+
+    /// <summary>Ticks until a tapped button is let go. Driven by <see cref="TickTap"/>.</summary>
+    private static int DelayedRelease;
+
+    public static void TickTap()
+    {
+        if (DelayedRelease > 0 && --DelayedRelease == 0)
+            InputSim.Release(InputSim.ToolButton);
+    }
+
+    private static IEnumerable WaitForFarmerFree(JobContext ctx)
+    {
+        for (int i = 0; i < 300 && (Game1.player.UsingTool || !Game1.player.CanMove); i++)
+        {
+            ctx.Touch();
+            yield return null;
+        }
+        Actions.ReleaseFarmer();
+    }
+
+    /// <summary>Land tiles next to open water, with the direction to face. Open water: four fishable tiles in a row.</summary>
+    private static List<(Point stand, int dir)> FindSpots(GameLocation loc)
+    {
+        int w = loc.Map.Layers[0].LayerWidth, h = loc.Map.Layers[0].LayerHeight;
+        var dirs = new (int dx, int dy, int dir)[] { (0, -1, Game1.up), (1, 0, Game1.right), (0, 1, Game1.down), (-1, 0, Game1.left) };
+        Point me = Game1.player.TilePoint;
+        var spots = new List<(Point, int)>();
+        for (int x = 1; x < w - 1; x++)
+        {
+            for (int y = 1; y < h - 1; y++)
+            {
+                if (loc.isWaterTile(x, y) || !loc.isTilePassable(new Vector2(x, y)))
+                    continue;
+                foreach (var (dx, dy, dir) in dirs)
+                {
+                    bool open = true;
+                    for (int k = 1; k <= 4 && open; k++)
+                        open = loc.isWaterTile(x + dx * k, y + dy * k) && loc.isTileFishable(x + dx * k, y + dy * k);
+                    if (open) { spots.Add((new Point(x, y), dir)); break; }
+                }
+            }
+        }
+        return spots.OrderBy(s => Math.Abs(s.Item1.X - me.X) + Math.Abs(s.Item1.Y - me.Y)).Take(12).ToList();
+    }
+}

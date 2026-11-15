@@ -33,8 +33,41 @@ public sealed class ModConfig
     /// <summary>Autopilot rules.</summary>
     public AutopilotConfig Autopilot { get; set; } = new();
 
+    /// <summary>Self-play: the agent plays by itself toward a standing goal.</summary>
+    public SelfPlayConfig SelfPlay { get; set; } = new();
+
+    /// <summary>One-click start: launch the pi agent together with the game.</summary>
+    public LauncherConfig Launcher { get; set; } = new();
+
     /// <summary>Developer options. Leave at defaults for normal play.</summary>
     public DevConfig Dev { get; set; } = new();
+}
+
+public sealed class LauncherConfig
+{
+    /// <summary>Start pi automatically when the game starts.</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>The pi executable (on PATH, or a full path).</summary>
+    public string PiCommand { get; set; } = "pi";
+
+    /// <summary>Path to the extension entry (agent/src/index.ts). Empty: the copy shipped in the mod folder.</summary>
+    public string ExtensionPath { get; set; } = "";
+
+    /// <summary>Optional model, for example 'openai/gpt-5'. Empty: pi's default.</summary>
+    public string Model { get; set; } = "";
+}
+
+public sealed class SelfPlayConfig
+{
+    /// <summary>Key that starts or stops self-play.</summary>
+    public SButton ToggleKey { get; set; } = SButton.F10;
+
+    /// <summary>Most model requests per game day in self-play. 0 for no limit.</summary>
+    public int DailyRequestBudget { get; set; } = 120;
+
+    /// <summary>Most model tokens per game day in self-play. 0 for no limit.</summary>
+    public long DailyTokenBudget { get; set; } = 0;
 }
 
 public sealed class AutopilotConfig

@@ -13,4 +13,9 @@
     <!-- Newtonsoft.Json ships with SMAPI; reference it without copying. -->
     <Reference Include="Newtonsoft.Json" HintPath="$(GamePath)/smapi-internal/Newtonsoft.Json.dll" Private="false" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Ship the pi extension inside the mod so the launcher works without the repo. -->
+    <None Include="../../agent/src/*.ts" Link="agent/src/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../agent/package.json" Link="agent/package.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

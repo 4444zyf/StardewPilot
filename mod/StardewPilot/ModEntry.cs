@@ -9,6 +9,7 @@ using StardewModdingAPI.Events;
 using StardewPilot.Autopilot;
 using StardewPilot.Bridge;
 using StardewPilot.Guide;
+using StardewPilot.Memory;
 using StardewPilot.Tools;
 using StardewValley;
 
@@ -22,7 +23,11 @@ public sealed class ModEntry : Mod
     private ToolRegistry? tools;
     private TipEngine? tips;
     private JobRunner? runner;
+    private MemoryStore? memory;
+    private AgentLauncher? launcher;
+    private readonly SelfPlay selfPlay = new();
     private bool autoLoadDone;
+    private int lastBusyScreenTick;
 
     /// <summary>Tips sent to the agent for wording, with the time their fallback text is due.</summary>
     private readonly Queue<(TipTrigger tip, double deadline)> pendingTips = new();
@@ -40,9 +45,13 @@ public sealed class ModEntry : Mod
         this.tools = new ToolRegistry(this.Monitor);
         StateTools.Register(this.tools, () => this.ModManifest.Version.ToString());
         this.runner = new JobRunner(this.Monitor, () => this.config);
+        Navigation.Config = () => this.config;
         ActionTools.Register(this.tools, this.runner, new Macros(() => this.config, helper));
+        this.memory = new MemoryStore(helper.DirectoryPath, this.Monitor);
+        MemoryTools.Register(this.tools, this.memory, this.selfPlay, () => this.config, (on, goal) => this.SetSelfPlay(on, goal));
         this.runner.Finished += (name, result) =>
         {
+            this.selfPlay.LogJob(name, result);
             if (name == "go_to_bed (end of day)")
                 ChatLog.Add(ChatSender.System, result.Outcome == JobOutcome.Done ? "It's late, so the autopilot put the farmer to bed." : $"Tried to go to bed: {result.Summary}");
         };
@@ -54,6 +63,7 @@ public sealed class ModEntry : Mod
                 Toast.Show(entry);
         };
 
+        helper.Events.GameLoop.GameLaunched += (_, _) => InputSim.Init(helper);
         helper.Events.GameLoop.GameLaunched += this.OnGameLaunched;
         helper.Events.GameLoop.UpdateTicked += this.OnUpdateTicked;
         helper.Events.GameLoop.SaveLoaded += (_, _) => this.Notify("save_loaded");
@@ -61,17 +71,25 @@ public sealed class ModEntry : Mod
         {
             this.tips.OnDayStarted();
             Navigation.ResetBlockedExits();
-            this.Notify("day_started", new { season = Game1.currentSeason, day = Game1.dayOfMonth, year = Game1.year });
+            this.selfPlay.OnDayStarted();
+            this.Notify("day_started", new { season = Game1.currentSeason, day = Game1.dayOfMonth, year = Game1.year, selfPlay = this.selfPlay.Enabled });
         };
         helper.Events.GameLoop.TimeChanged += (_, e) =>
         {
             this.Monitor.Log($"Time changed to {e.NewTime}.", LogLevel.Trace);
             this.tips.OnTimeChanged(e.NewTime);
         };
-        helper.Events.GameLoop.Saved += (_, _) => this.Notify("saved");
+        helper.Events.GameLoop.DayEnding += (_, _) => this.WriteFallbackSummary();
+        helper.Events.GameLoop.Saved += (_, _) =>
+        {
+            this.memory.Commit();
+            this.Notify("saved");
+        };
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
         {
             this.runner.Stop(JobOutcome.Failed, "Returned to the title screen.");
+            this.memory.Discard();
+            this.selfPlay.Stop("The game returned to the title screen.");
             ChatLog.Clear();
             this.pendingTips.Clear();
             this.Notify("returned_to_title");
@@ -99,6 +117,7 @@ public sealed class ModEntry : Mod
                     gameLanguage = LocalizedContentManager.CurrentLanguageCode.ToString(),
                     tellMeEverything = this.config.TellMeEverything,
                     chattiness = this.config.Chattiness.ToString(),
+                    selfPlay = this.selfPlay.Enabled,
                 },
             }));
             this.bridge.Register("ping", (_, _) => Task.FromResult<object?>(new { }));
@@ -109,6 +128,14 @@ public sealed class ModEntry : Mod
                 this.ReceiveAgentMessage(p?.Value<string>("text") ?? "", p?.Value<string>("kind") ?? "reply");
                 return new { };
             }));
+            this.bridge.Register("agent/usage", (p, _) => MainThread.Run<object?>(() =>
+            {
+                this.selfPlay.AddUsage(p?.Value<int?>("requests") ?? 0, p?.Value<long?>("tokens") ?? 0);
+                return new { };
+            }));
+            this.bridge.Register("selfplay/next", (_, _) => MainThread.Run<object?>(this.SelfPlayNext));
+            this.bridge.Register("memory/seed", (_, _) => MainThread.Run<object?>(() =>
+                Context.IsWorldReady ? MemoryTools.Snapshot(this.memory!, this.selfPlay, this.config) : new { }));
             this.bridge.Register("agent/status", (p, _) =>
             {
                 AgentState.SetBusy(p?.Value<bool?>("busy") ?? false, p?.Value<string>("activity"));
@@ -118,6 +145,11 @@ public sealed class ModEntry : Mod
 
             ConnectionFile.Write(this.config.Port, this.config.Token, Game1.version, this.ModManifest.Version.ToString());
             this.Monitor.Log($"Bridge listening on 127.0.0.1:{this.config.Port}. Connection details: {ConnectionFile.FilePath}", LogLevel.Info);
+            if (this.config.Launcher.Enabled)
+            {
+                this.launcher = new AgentLauncher(this.Monitor);
+                this.launcher.Start(this.config.Launcher, this.Helper.DirectoryPath);
+            }
         }
         catch (Exception ex)
         {
@@ -128,6 +160,10 @@ public sealed class ModEntry : Mod
     private void OnUpdateTicked(object? sender, UpdateTickedEventArgs e)
     {
         MainThread.Drain();
+        InputSim.Tick();
+        Fishing.TickTap();
+        if (Game1.eventUp || Game1.activeClickableMenu != null)
+            this.lastBusyScreenTick = Game1.ticks;
 
         if (Context.IsWorldReady)
         {
@@ -171,8 +207,10 @@ public sealed class ModEntry : Mod
     /// <summary>Movement or tool input from the player cancels the autopilot at once.</summary>
     private bool IsTakeControlInput(SButton button)
     {
-        if (Game1.activeClickableMenu != null)
-            return false; // typing in the chat or answering a confirmation does not count
+        if (Game1.activeClickableMenu != null || Game1.eventUp)
+            return false; // typing in the chat, answering a confirmation, or clicking through a cutscene does not count
+        if (Game1.ticks - this.lastBusyScreenTick < 90 && button is SButton.MouseLeft or SButton.MouseRight)
+            return false; // the last click of a cutscene or dialogue often lands just after it closes
         var o = Game1.options;
         return button is SButton.MouseLeft or SButton.MouseRight
             || o.moveUpButton.Any(k => k.ToSButton() == button) || o.moveDownButton.Any(k => k.ToSButton() == button)
@@ -188,18 +226,30 @@ public sealed class ModEntry : Mod
         if (!Context.IsWorldReady)
             return;
 
+        if (e.Button == this.config.SelfPlay.ToggleKey)
+        {
+            this.SetSelfPlay(!this.selfPlay.Enabled, null);
+            this.Helper.Input.Suppress(e.Button);
+            return;
+        }
         if (e.Button == this.config.Autopilot.ToggleKey)
         {
             this.runner!.Enabled = !this.runner.Enabled;
             if (!this.runner.Enabled)
+            {
                 this.runner.Stop(JobOutcome.Partial, "The player switched the autopilot off.");
+                if (this.selfPlay.Enabled)
+                    this.SetSelfPlay(false, null, "The player switched the autopilot off.");
+            }
             Game1.addHUDMessage(new HUDMessage($"StardewPilot autopilot {(this.runner.Enabled ? "on" : "off")}"));
             this.Helper.Input.Suppress(e.Button);
             return;
         }
-        if (this.runner!.IsRunning && IsTakeControlInput(e.Button))
+        if ((this.runner!.IsRunning || this.selfPlay.Enabled) && !InputSim.IsSimulated(e.Button) && IsTakeControlInput(e.Button))
         {
             this.runner.Stop(JobOutcome.Partial, "The player took control, so the autopilot stopped.");
+            if (this.selfPlay.Enabled)
+                this.SetSelfPlay(false, null, "The player took control. Press F10 to let the copilot play again.");
             return;
         }
 
@@ -282,6 +332,73 @@ public sealed class ModEntry : Mod
         this.bridge?.Broadcast("tips/warning", new { kind, text });
     }
 
+    /// <summary>Start or stop self-play, from the hotkey or the agent.</summary>
+    private void SetSelfPlay(bool enabled, string? goal, string? reason = null)
+    {
+        if (goal is { Length: > 0 })
+            this.memory!.WriteGoal(goal);
+        if (enabled)
+        {
+            if (!this.runner!.Enabled)
+            {
+                ChatLog.Add(ChatSender.System, "Self-play needs the autopilot on (F9).");
+                return;
+            }
+            if (!AgentState.Connected)
+            {
+                ChatLog.Add(ChatSender.System, "Self-play needs the agent. Start pi with the StardewPilot extension.");
+                return;
+            }
+            this.selfPlay.Start();
+            string g = this.memory!.Goal;
+            ChatLog.Add(ChatSender.System, $"Self-play on. Goal: {(g.Length > 0 ? g : "the default first-year plan")}. Move or press F10 to take over.");
+        }
+        else if (this.selfPlay.Enabled)
+        {
+            this.selfPlay.Stop(reason ?? "Stopped.");
+            ChatLog.Add(ChatSender.System, $"Self-play off. {reason}".Trim());
+        }
+        this.bridge?.Broadcast("selfplay/changed", new { enabled = this.selfPlay.Enabled, goal = this.memory!.Goal, reason });
+    }
+
+    /// <summary>Asked by the agent before each self-play step: may it continue now?</summary>
+    private object SelfPlayNext()
+    {
+        if (!Context.IsWorldReady)
+            return new { go = false, reason = "No save is loaded." };
+        if (!this.selfPlay.Enabled)
+            return new { go = false, reason = this.selfPlay.StopReason };
+        if (this.selfPlay.BudgetExhausted(this.config))
+        {
+            string why = $"Today's model budget is used up ({this.selfPlay.RequestsToday} requests).";
+            this.SetSelfPlay(false, null, why + " Self-play resumes when you press F10.");
+            if (Game1.timeOfDay >= 2000 && !this.runner!.IsRunning)
+            {
+                var macros = new Macros(() => this.config, this.Helper);
+                _ = this.runner.Start("go_to_bed (end of day)", ctx => macros.GoToBed(ctx));
+            }
+            return new { go = false, reason = why };
+        }
+        if (this.runner!.IsRunning || !Context.IsPlayerFree || Game1.activeClickableMenu != null || Game1.timeOfDay >= this.config.Autopilot.StopWorkAt)
+            return new { go = false, wait = true, waitSeconds = 3 };
+        Farmer p = Game1.player;
+        return new
+        {
+            go = true,
+            brief = $"{StateTools.FormatTime(Game1.timeOfDay)}, {Game1.currentSeason} {Game1.dayOfMonth}, energy {(int)p.Stamina}/{p.MaxStamina}, {p.Money}g, at {p.currentLocation.DisplayName}.",
+            requestsLeft = this.config.SelfPlay.DailyRequestBudget > 0 ? this.config.SelfPlay.DailyRequestBudget - this.selfPlay.RequestsToday : (int?)null,
+        };
+    }
+
+    /// <summary>If the agent did not summarise the day, keep a plain record so tomorrow still has one.</summary>
+    private void WriteFallbackSummary()
+    {
+        if (this.memory == null || this.memory.TodaySummary.Length > 0 || this.selfPlay.JobLog.Count == 0)
+            return;
+        int earned = Game1.player.Money - this.selfPlay.MoneyAtDayStart;
+        this.memory.WriteSummary($"(Written automatically: the agent did not write a summary.)\nMoney: {Game1.player.Money}g ({(earned >= 0 ? "+" : "")}{earned}g today, before shipping).\nActions:\n- {string.Join("\n- ", this.selfPlay.JobLog)}");
+    }
+
     /// <summary>Tell connected agents that something happened in the game.</summary>
     private void Notify(string type, object? data = null) =>
         this.bridge?.Broadcast("notifications/game_event", new { type, data });
@@ -290,6 +407,7 @@ public sealed class ModEntry : Mod
     {
         if (disposing)
         {
+            this.launcher?.Dispose();
             this.bridge?.Dispose();
             ConnectionFile.Delete();
         }

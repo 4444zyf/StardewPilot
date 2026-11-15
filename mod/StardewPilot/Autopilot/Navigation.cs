@@ -98,14 +98,29 @@ internal static class Navigation
             string here = Game1.currentLocation.NameOrUniqueName;
             if (here.Equals(location, StringComparison.OrdinalIgnoreCase))
                 break;
-            List<Exit> route = PlanRoute(location) ?? throw JobContext.Fail($"No known way from {Game1.currentLocation.DisplayName} to {location}.");
+            List<Exit> route = PlanRoute(location) ?? throw JobContext.Fail($"No known way from {Game1.currentLocation.DisplayName} to {location}. It may be locked or not open yet.");
             Exit hop = route[0];
             ctx.Progress($"walking to {location} (via {hop.To})");
             bool ok = false;
-            foreach (object? step in UseExit(ctx, hop, r => ok = r))
-                yield return step;
+            string? why = null;
+            IEnumerator exit = UseExit(ctx, hop, r => ok = r).GetEnumerator();
+            while (true)
+            {
+                bool more;
+                try { more = exit.MoveNext(); }
+                catch (JobStop stop) when (stop.Message.StartsWith("No path") || stop.Message.StartsWith("Could not get"))
+                {
+                    why = stop.Message;
+                    break;
+                }
+                if (!more) break;
+                yield return exit.Current;
+            }
             if (!ok)
+            {
                 BlockedExits.Add(Key(hop)); // try another way
+                ctx.Log($"exit to {hop.To} blocked: {why}");
+            }
         }
         if (!Game1.currentLocation.NameOrUniqueName.Equals(location, StringComparison.OrdinalIgnoreCase))
             throw JobContext.Fail($"Could not reach {location}: every route was blocked.");
@@ -131,7 +146,15 @@ internal static class Navigation
                 : PathFindController.isAtEndPoint;
             Stack<Point>? path = PathFindController.findPath(Game1.player.TilePoint, target, endTest, loc, Game1.player, 30000);
             if (path == null)
-                throw JobContext.Fail($"No path to tile ({target.X}, {target.Y}) in {loc.DisplayName}.");
+            {
+                // Blocked by weeds, stones or twigs? Walk through them, clearing them with tools like a player would.
+                List<Point>? clearing = PathThroughDebris(loc, Game1.player.TilePoint, target, adjacent);
+                if (clearing == null)
+                    throw JobContext.Fail($"No path to tile ({target.X}, {target.Y}) in {loc.DisplayName}.");
+                foreach (object? step in WalkClearing(ctx, loc, clearing))
+                    yield return step;
+                continue;
+            }
 
             Point end = path.Last();
             ctx.Log($"walk start: {path.Count} steps to ({target.X},{target.Y})");
@@ -160,6 +183,112 @@ internal static class Navigation
         if (!IsAt(target, adjacent))
             throw JobContext.Fail($"Could not get {(adjacent ? "next to" : "to")} tile ({target.X}, {target.Y}) in {loc.DisplayName}: the way is blocked.");
     }
+
+    /// <summary>Debris a player can clear with starting tools: weeds (scythe), stones (pickaxe), twigs (axe).</summary>
+    public static bool IsClearableDebris(GameLocation loc, Point tile) =>
+        loc.objects.TryGetValue(new Vector2(tile.X, tile.Y), out StardewValley.Object obj)
+        && (obj.IsWeeds() || obj.IsBreakableStone() || obj.IsTwig());
+
+    private static bool IsWalkable(GameLocation loc, Point t) =>
+        !loc.isCollidingPosition(new Rectangle(t.X * 64 + 1, t.Y * 64 + 1, 62, 62), Game1.viewport, isFarmer: true, 0, glider: false, Game1.player, pathfinding: true);
+
+    /// <summary>A* where clearable debris is passable at extra cost. Returns the tiles to walk, start excluded.</summary>
+    public static List<Point>? PathThroughDebris(GameLocation loc, Point start, Point target, bool adjacent)
+    {
+        int w = loc.Map.Layers[0].LayerWidth, h = loc.Map.Layers[0].LayerHeight;
+        const int DebrisCost = 8;
+        var cost = new Dictionary<Point, int> { [start] = 0 };
+        var from = new Dictionary<Point, Point>();
+        var open = new PriorityQueue<Point, int>();
+        open.Enqueue(start, 0);
+        int expanded = 0;
+        var dirs = new[] { new Point(0, -1), new Point(1, 0), new Point(0, 1), new Point(-1, 0) };
+        while (open.TryDequeue(out Point cur, out _) && expanded++ < 40000)
+        {
+            int dist = Math.Abs(cur.X - target.X) + Math.Abs(cur.Y - target.Y);
+            if (adjacent ? dist == 1 : dist == 0)
+            {
+                var path = new List<Point>();
+                for (Point p = cur; p != start; p = from[p])
+                    path.Add(p);
+                path.Reverse();
+                return path;
+            }
+            foreach (Point d in dirs)
+            {
+                var next = new Point(cur.X + d.X, cur.Y + d.Y);
+                bool isTarget = next == target;
+                bool inBounds = next.X >= 0 && next.Y >= 0 && next.X < w && next.Y < h;
+                if (!inBounds && !isTarget)
+                    continue;
+                int step;
+                if (!inBounds || IsWalkable(loc, next)) step = 1;
+                else if (IsClearableDebris(loc, next)) step = DebrisCost;
+                else continue;
+                int c = cost[cur] + step;
+                if (cost.TryGetValue(next, out int known) && known <= c)
+                    continue;
+                cost[next] = c;
+                from[next] = cur;
+                open.Enqueue(next, c + Math.Abs(next.X - target.X) + Math.Abs(next.Y - target.Y));
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Walk a precomputed path, clearing debris on it with the matching tool.</summary>
+    private static IEnumerable WalkClearing(JobContext ctx, GameLocation loc, List<Point> path)
+    {
+        int i = 0;
+        while (i < path.Count && Game1.currentLocation == loc)
+        {
+            // Walk the clear stretch up to the next debris tile.
+            int j = i;
+            while (j < path.Count && !IsClearableDebris(loc, path[j]))
+                j++;
+            if (j > i)
+            {
+                var segment = new Stack<Point>(path.GetRange(i, j - i).AsEnumerable().Reverse());
+                Game1.player.controller = new PathFindController(segment, loc, Game1.player, path[j - 1]);
+                Point last = Game1.player.TilePoint;
+                ctx.Progress("walking (clearing a way)");
+                while (Game1.player.controller != null && Game1.currentLocation == loc)
+                {
+                    if (Game1.player.TilePoint != last) { last = Game1.player.TilePoint; ctx.Progress(); }
+                    yield return null;
+                }
+                for (int k = 0; k < 600 && Game1.currentLocation == loc && (Game1.isWarping || Game1.locationRequest != null); k++)
+                {
+                    ctx.Touch();
+                    yield return null;
+                }
+                if (Game1.currentLocation != loc || Game1.player.TilePoint != path[j - 1])
+                    yield break; // warped, or knocked off the path: the caller re-plans
+            }
+            if (j >= path.Count)
+                yield break;
+
+            // Clear the debris in front.
+            Point debris = path[j];
+            var obj = loc.objects[new Vector2(debris.X, debris.Y)];
+            StardewValley.Tool? tool = obj.IsWeeds() ? (StardewValley.Tool?)Actions.FindScythe() ?? Actions.FindTool<StardewValley.Tools.Pickaxe>()
+                : obj.IsBreakableStone() ? Actions.FindTool<StardewValley.Tools.Pickaxe>()
+                : Actions.FindTool<StardewValley.Tools.Axe>();
+            if (tool == null)
+                throw JobContext.Fail($"The way is blocked by {obj.DisplayName} and the right tool is not in the backpack.");
+            for (int k = 0; k < 6 && IsClearableDebris(loc, debris); k++)
+            {
+                foreach (object? s in Actions.UseTool(ctx, Config(), tool, debris))
+                    yield return s;
+            }
+            if (IsClearableDebris(loc, debris))
+                throw JobContext.Fail($"Could not clear the {obj.DisplayName} at ({debris.X}, {debris.Y}).");
+            i = j;
+        }
+    }
+
+    /// <summary>Set by the mod entry so walking can read the config (energy reserve).</summary>
+    public static Func<ModConfig> Config = () => new ModConfig();
 
     public static bool WarpInProgress() =>
         Game1.isWarping || Game1.locationRequest != null || Game1.fadeToBlack || Game1.globalFade;

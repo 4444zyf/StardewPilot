@@ -230,6 +230,8 @@ internal sealed class JobRunner
     {
         JobContext? done = this.ctx;
         TaskCompletionSource<JobResult>? tcs = this.completion;
+        InputSim.ReleaseAll(); // never leave a simulated button held
+        Actions.ReleaseFarmer(); // never leave the farmer frozen after a job
         this.ctx = null;
         this.completion = null;
         this.stack.Clear();

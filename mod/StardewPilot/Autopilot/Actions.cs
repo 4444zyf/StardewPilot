@@ -149,6 +149,19 @@ internal static class Actions
         }
     }
 
+    /// <summary>
+    /// After closing a dialogue from code, give the farmer back the movement a normal close would restore.
+    /// Without this the farmer can stay frozen with nothing on screen.
+    /// </summary>
+    public static void ReleaseFarmer()
+    {
+        if (Game1.activeClickableMenu == null && !Game1.eventUp && !Game1.player.UsingTool)
+        {
+            Game1.dialogueUp = false;
+            Game1.player.CanMove = true;
+        }
+    }
+
     /// <summary>Close any dialogue box the last action opened, returning its text.</summary>
     public static string? CloseDialogue()
     {
@@ -158,6 +171,7 @@ internal static class Actions
             box.closeDialogue();
             if (Game1.activeClickableMenu is DialogueBox)
                 Game1.exitActiveMenu();
+            ReleaseFarmer();
             return text;
         }
         return null;
@@ -177,5 +191,6 @@ internal static class Actions
         }
         if (Game1.activeClickableMenu is DialogueBox)
             Game1.exitActiveMenu();
+        ReleaseFarmer();
     }
 }
