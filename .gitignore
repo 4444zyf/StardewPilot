@@ -1,0 +1,25 @@
+# .NET / SMAPI mod
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.zip
+
+# Node / pi extension
+node_modules/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# Local secrets and config
+.env
+.env.*
+config.json
+*.token
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
