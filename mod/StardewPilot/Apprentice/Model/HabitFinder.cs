@@ -97,7 +97,8 @@ public static class HabitFinder
         }
         if (steps.Count == 0)
             return null;
-        steps = steps.OrderBy(s => Time.ToMinutes(s.UsualStart)).ToList();
+        // Storing comes last whatever its usual time, so "do my usual morning" does not put away the seeds a later step plants.
+        steps = steps.OrderBy(s => s.Activity == Act.Store ? 1 : 0).ThenBy(s => Time.ToMinutes(s.UsualStart)).ToList();
         var first = steps[0];
         return new Habit
         {

@@ -79,6 +79,7 @@ public static class Act
         Animals => "tend_animals",
         Machines => "tend_machines",
         Forage => "collect_forage",
+        Store => "put_things_away",
         _ => null,
     };
 
@@ -96,6 +97,7 @@ public static class Act
         "buy_items" => Buy,
         "ship_items" => Sell,
         "store_in_chest" => Store,
+        "put_things_away" => Store,
         "take_from_chest" => Fetch,
         "talk_to" => Talk,
         "give_gift" => Gift,

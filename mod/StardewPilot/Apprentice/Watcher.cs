@@ -298,11 +298,25 @@ internal sealed class Watcher
                 this.Trace($"shop {shop.ShopId}: +{string.Join(",", gained)} -{string.Join(",", lost)}");
                 return;
 
-            case ItemGrabMenu grab when grab.context is Chest:
-                foreach (var (id, n) in gained) { this.cur.AddItem("fetched", id, n); this.cur.Add(Act.Fetch, n, now); }
-                foreach (var (id, n) in lost) { this.cur.AddItem("stored", id, n); this.cur.Add(Act.Store, n, now); }
-                this.Trace($"chest: +{string.Join(",", gained)} -{string.Join(",", lost)}");
+            // A mini-shipping bin is a chest in the game's code, but what goes in is sold overnight.
+            case ItemGrabMenu grab when grab.context is Chest { SpecialChestType: Chest.SpecialChestTypes.MiniShippingBin }:
+                foreach (var (id, n) in lost) { this.cur.AddItem("sold", id, n); this.cur.Add(Act.Sell, n, now); }
+                this.Trace($"mini-shipping bin: -{string.Join(",", lost)}");
                 return;
+
+            // Hoppers and enrichers: not storage, and loading them is not watched in this round.
+            case ItemGrabMenu grab when grab.context is Chest box && !box.fridge.Value && !ItemFinder.IsStorageChest(box):
+                return;
+
+            case ItemGrabMenu grab when grab.context is Chest box:
+                {
+                    foreach (var (id, n) in gained) { this.cur.AddItem("fetched", id, n); this.cur.Add(Act.Fetch, n, now); }
+                    // The chest menu also has a trash can and a drop button: only what the chest now holds was stored.
+                    var held = box.GetItemsForPlayer().Where(i => i != null).Select(i => i.QualifiedItemId).ToHashSet();
+                    foreach (var (id, n) in lost.Where(l => held.Contains(l.QualifiedItemId))) { this.cur.AddItem("stored", id, n); this.cur.Add(Act.Store, n, now); }
+                    this.Trace($"chest: +{string.Join(",", gained)} -{string.Join(",", lost)}");
+                    return;
+                }
 
             case ItemGrabMenu grab when grab.context is SObject { QualifiedItemId: AnimalTools.AutoGrabberId }:
                 foreach (var (id, n) in gained) { this.cur.AddItem("gained", id, n); this.cur.Add(Act.Animals, n, now); }

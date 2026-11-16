@@ -98,6 +98,15 @@ internal static class ActionTools
                 ("y", Tile("Chest tile y."), false)),
             a => ctx => macros.Store(ctx, (a["items"] as JArray)?.Select(t => t.ToString()).ToList(), a.Bool("allButTools") ?? false, a.Int("x") is int x && a.Int("y") is int y ? new Point(x, y) : null, a.Str("location")));
 
+        Action("put_things_away",
+            "Put the backpack's items away into the player's own chests and fridges, the way the player already sorts them: each item goes to the chest that already holds most of it, " +
+            "else to the chest holding most items of its kind. Items no chest has a kind for stay, and so do tools, the toolbar row (first 12 slots, unless includeToolbar) and the item in hand. " +
+            "Mini-shipping bins, hoppers and Junimo chests are never used. Reports what went where and what stayed.",
+            Schema.Object(
+                ("includeToolbar", Schema.Boolean("Also put away items in the toolbar row. Default false."), false),
+                ("items", Schema.Array(Schema.String("Item name."), "Only these items. Default all."), false)),
+            a => ctx => macros.PutAway(ctx, a.Bool("includeToolbar") ?? false, (a["items"] as JArray)?.Select(t => t.ToString()).ToList()));
+
         Action("take_from_chest",
             "Take an item out of a chest, fridge or Junimo chest: the one at x, y, or else the nearest one in the map that has the item. find_items tells where things are. Optionally only items of at least a given quality (lowest good-enough quality is taken first).",
             Schema.Object(

@@ -108,6 +108,14 @@ internal static class ItemFinder
     public static string QualityName(int q) => q switch { 1 => "silver", 2 => "gold", 4 => "iridium", _ => "normal" };
 
     /// <summary>Every stack in the kept places. Runs on the main thread.</summary>
+    /// <summary>
+    /// A container the player stores things in: a placed chest (plain, big or Junimo) or a mini-fridge. Mini-shipping bins
+    /// (sold overnight), hoppers and enrichers are chests in the game's code too, but not storage.
+    /// </summary>
+    public static bool IsStorageChest(Chest c) =>
+        c.playerChest.Value && !c.giftbox.Value &&
+        c.SpecialChestType is Chest.SpecialChestTypes.None or Chest.SpecialChestTypes.BigChest or Chest.SpecialChestTypes.JunimoChest;
+
     public static List<FoundItem> Scan()
     {
         var found = new List<FoundItem>();
@@ -143,7 +151,7 @@ internal static class ItemFinder
                 SObject obj = pair.Value;
                 if (obj is Chest chest)
                 {
-                    if (!chest.playerChest.Value || chest.giftbox.Value)
+                    if (!IsStorageChest(chest))
                         continue;
                     if (chest.SpecialChestType == Chest.SpecialChestTypes.JunimoChest)
                     {

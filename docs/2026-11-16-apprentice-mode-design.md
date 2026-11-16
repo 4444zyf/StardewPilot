@@ -231,7 +231,7 @@ Found on the way, outside this design, and fixed on 2026-11-16:
 Not designed here.
 
 - **Keep or sell:** which items the player ships, stores or processes. It needs item flow across days and a signal for loading machines.
-- **Where things go:** which chest gets which kind of item. Needs a way to identify a chest that survives it being moved.
+- **Where things go:** which chest gets which kind of item. Needs a way to identify a chest that survives it being moved. Done differently: [put it away my way](2026-11-16-put-it-away-my-way-design.md) reads the sorting from the chests' contents.
 - **People:** whom the player talks to and gifts most.
 - **A personal line in the morning briefing** ("rain today; you are usually at the lake"). Done: [habits in the briefing](2026-11-16-habits-in-the-briefing-design.md).
 - **A one-time offer** when a morning habit first appears. Done: [habits in the briefing](2026-11-16-habits-in-the-briefing-design.md).

@@ -4,9 +4,11 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Xna.Framework;
 using StardewModdingAPI;
+using StardewPilot.Apprentice.Model;
 using StardewPilot.Guide;
 using StardewPilot.Tools;
 using StardewValley;
+using StardewValley.Network;
 using StardewValley.Buildings;
 using StardewValley.GameData.Crops;
 using StardewValley.Internal;
@@ -740,17 +742,65 @@ internal sealed class Macros
         foreach (object? s in this.GoToChest(ctx, chestTile, location, c => chest = c))
             yield return s;
         Chest box = chest!;
-        var stored = new List<string>();
         var toStore = Game1.player.Items.Where(i => i != null && !(i is Tool) &&
             (allButTools || (items?.Any(q => StateTools.FindItemId(q) == i.QualifiedItemId || i.DisplayName.Equals(q.Trim(), StringComparison.OrdinalIgnoreCase)) ?? false))).ToList();
-        foreach (Item item in toStore)
+        var stored = new List<string>();
+        bool locked = false;
+        foreach (object? s in LockChest(box, ok => locked = ok))
+            yield return s;
+        if (!locked)
+            throw JobContext.Fail("Someone else has that chest open.");
+        try
         {
-            Item? left = box.addItem(item);
-            if (left == null) { Game1.player.removeItemFromInventory(item); stored.Add($"{item.DisplayName} x{item.Stack}"); }
-            else { ctx.Problems.Add("The chest is full."); break; }
+            stored = PutInto(box, toStore, out bool full);
+            if (full)
+                ctx.Problems.Add("The chest is full.");
+        }
+        finally
+        {
+            box.GetMutex().ReleaseLock();
         }
         ctx.Report["stored"] = stored;
         ctx.Progress();
+    }
+
+    /// <summary>Move items from the backpack into a chest (existing stacks first). Stops at the first item that does not fit.</summary>
+    public static List<string> PutInto(Chest box, IEnumerable<Item> items, out bool full)
+    {
+        var stored = new List<string>();
+        full = false;
+        foreach (Item item in items)
+        {
+            int before = item.Stack;
+            Item? left = box.addItem(item);
+            if (left == null)
+            {
+                Game1.player.removeItemFromInventory(item);
+                stored.Add($"{item.DisplayName} x{before}");
+            }
+            else
+            {
+                // Part of the stack may have gone onto existing stacks.
+                if (left.Stack < before)
+                    stored.Add($"{item.DisplayName} x{before - left.Stack}");
+                full = true;
+                break;
+            }
+        }
+        return stored;
+    }
+
+    /// <summary>Take a chest's lock, as the game does when a player opens it, so two players never change it at once. Waits up to two seconds.</summary>
+    public static IEnumerable LockChest(Chest box, Action<bool> done)
+    {
+        bool? got = null;
+        NetMutex mutex = box.GetMutex();
+        mutex.RequestLock(() => got = true, () => got = false);
+        for (int t = 0; t < 120 && got == null; t++)
+            yield return null;
+        if (got != true && mutex.IsLockHeld())
+            got = true;
+        done(got == true);
     }
 
     public IEnumerable Take(JobContext ctx, string itemQuery, int? count, Point? chestTile, string? location, int minQuality = 0)
@@ -786,6 +836,152 @@ internal sealed class Macros
         ctx.Progress();
     }
 
+    // ---------------------------------------------------------------- put things away
+
+    /// <summary>
+    /// Empty the backpack into the player's own chests the way they already sort them: each item to the chest holding
+    /// most of it, else most stacks of its kind. Tools, the toolbar row (unless included) and the item in hand stay.
+    /// </summary>
+    public IEnumerable PutAway(JobContext ctx, bool includeToolbar, List<string>? only)
+    {
+        int hand = Game1.player.CurrentToolIndex;
+        var (boxes, chests) = StorageBoxes();
+        var pack = Game1.player.Items.Select((item, slot) => (item, slot)).Where(x => x.item != null)
+            .Select(x => new PackItem
+            {
+                Slot = x.slot,
+                Id = x.item!.QualifiedItemId,
+                Name = x.item.DisplayName,
+                Category = x.item.Category,
+                Stack = x.item.Stack,
+                IsTool = x.item is Tool,
+            }).ToList();
+        Func<PackItem, bool>? asked = only is { Count: > 0 }
+            ? i => only.Any(q => StateTools.FindItemId(q) == i.Id || i.Name.Equals(q.Trim(), StringComparison.OrdinalIgnoreCase))
+            : null;
+        List<PutAwayStep> plan = PutAwayPlan.Plan(pack, boxes, includeToolbar, hand, asked);
+
+        var stored = new List<string>();
+        var stayed = new List<string>();
+        foreach (var group in PutAwayPlan.ByMap(plan, Game1.currentLocation.NameOrUniqueName))
+        {
+            foreach (var byBox in group.GroupBy(st => st.To!.Index))
+            {
+                Box box = byBox.First().To!;
+                Chest target = chests[box.Index];
+                string where = ChestWords(box, target);
+                string? failed = null;
+                foreach (object? st in Attempt(this.GoToChest(ctx, new Point(box.X, box.Y), box.Map, _ => { }, allowFridge: true), why => failed = why))
+                    yield return st;
+                if (failed != null)
+                {
+                    ctx.Problems.Add($"Could not reach {where}: {failed}");
+                    stayed.AddRange(byBox.Select(st => $"{st.Item.Name} x{st.Item.Stack} (could not reach {where})"));
+                    continue;
+                }
+                bool locked = false;
+                foreach (object? st in LockChest(target, ok => locked = ok))
+                    yield return st;
+                if (!locked)
+                {
+                    ctx.Problems.Add($"Someone else has {where} open.");
+                    stayed.AddRange(byBox.Select(st => $"{st.Item.Name} x{st.Item.Stack} ({where} is open)"));
+                    continue;
+                }
+                try
+                {
+                    // The real items, found again by slot: walking does not move them.
+                    var items = byBox.Select(st => Game1.player.Items[st.Item.Slot]).Where(i => i != null).ToList();
+                    var put = PutInto(target, items, out bool full);
+                    stored.AddRange(put.Select(t => $"{t} → {where}"));
+                    if (full)
+                    {
+                        ctx.Problems.Add($"{char.ToUpperInvariant(where[0])}{where.Substring(1)} is full.");
+                        stayed.AddRange(items.Where(i => Game1.player.Items.Contains(i)).Select(i => $"{i.DisplayName} x{i.Stack} ({where} is full)"));
+                    }
+                }
+                finally
+                {
+                    target.GetMutex().ReleaseLock();
+                }
+                ctx.Progress();
+            }
+        }
+
+        foreach (PutAwayStep st in plan.Where(st => st.To == null && st.Why is not PutAwayPlan.Stays_Tool and not PutAwayPlan.Stays_NotAsked))
+            stayed.Add($"{st.Item.Name} x{st.Item.Stack} ({st.Why})");
+        ctx.Report["stored"] = stored;
+        ctx.Report["stayed"] = stayed;
+        if (stored.Count == 0 && !includeToolbar && Game1.player.MaxItems <= PutAwayPlan.ToolbarSlots && plan.Any(st => st.Why == PutAwayPlan.Stays_Toolbar))
+            ctx.Report["note"] = "The backpack is only the toolbar row, which is kept by default. Say so (includeToolbar) to put those items away too.";
+        else if (stored.Count == 0 && boxes.Count == 0)
+            ctx.Report["note"] = "There are no chests to sort into yet.";
+        ctx.Report["how"] = "Computed: each item went to the chest that already held most of it, else the one with most stacks of its kind (at least two).";
+    }
+
+    /// <summary>
+    /// The chests and fridges the player stores things in, on every map but other farmers' homes, as the planner sees
+    /// them, with the real chests at the same index. Junimo chests are left out: they are a shared transfer box.
+    /// </summary>
+    private static (List<Box> boxes, List<Chest> chests) StorageBoxes()
+    {
+        var boxes = new List<Box>();
+        var chests = new List<Chest>();
+        FarmHouse myHome = Utility.getHomeOfFarmer(Game1.player);
+        void Add(GameLocation loc, Point tile, Chest c)
+        {
+            var box = new Box { Index = boxes.Count, Map = loc.NameOrUniqueName, X = tile.X, Y = tile.Y };
+            foreach (Item? i in c.Items)
+            {
+                if (i != null)
+                    box.Stacks.Add((i.QualifiedItemId, i.Category, i.Stack));
+            }
+            boxes.Add(box);
+            chests.Add(c);
+        }
+        Utility.ForEachLocation(loc =>
+        {
+            if (loc is FarmHouse home && home != myHome)
+                return true;
+            if (loc.GetFridge(onlyUnlocked: true) is { } fridge && loc.GetFridgePosition() is { } fridgeTile)
+                Add(loc, fridgeTile, fridge);
+            foreach (var pair in loc.objects.Pairs)
+            {
+                if (pair.Value is Chest c && ItemFinder.IsStorageChest(c) && c.SpecialChestType != Chest.SpecialChestTypes.JunimoChest)
+                    Add(loc, new Point((int)pair.Key.X, (int)pair.Key.Y), c);
+            }
+            return true;
+        });
+        return (boxes, chests);
+    }
+
+    /// <summary>"the big chest on the farm (68,17)", "the fridge in the farmhouse (6,4)".</summary>
+    private static string ChestWords(Box box, Chest c)
+    {
+        GameLocation? loc = Game1.getLocationFromName(box.Map);
+        string map = loc switch { Farm => "on the farm", FarmHouse => "in the farmhouse", { } l => $"in {l.DisplayName}", null => $"in {box.Map}" };
+        string what = loc?.GetFridge(onlyUnlocked: false) == c ? "the fridge" : c.fridge.Value ? "the mini-fridge" : $"the {c.DisplayName.ToLowerInvariant()}";
+        return $"{what} {map} ({box.X},{box.Y})";
+    }
+
+    /// <summary>Run a step; a failure (not a stop or cancel) is passed to <paramref name="failed"/> instead of ending the job.</summary>
+    private static IEnumerable Attempt(IEnumerable step, Action<string> failed)
+    {
+        IEnumerator e = step.GetEnumerator();
+        while (true)
+        {
+            bool more;
+            try { more = e.MoveNext(); }
+            catch (JobStop stop) when (stop.Outcome == JobOutcome.Failed)
+            {
+                failed(stop.Message);
+                yield break;
+            }
+            if (!more) yield break;
+            yield return e.Current;
+        }
+    }
+
     private Chest? chest;
 
     /// <summary>
@@ -799,7 +995,7 @@ internal sealed class Macros
             yield return s;
         Point me = Game1.player.TilePoint;
         var chests = loc.objects.Pairs
-            .Where(p => p.Value is Chest c && c.playerChest.Value && !c.giftbox.Value)
+            .Where(p => p.Value is Chest c && ItemFinder.IsStorageChest(c))
             .Select(p => (tile: new Point((int)p.Key.X, (int)p.Key.Y), box: (Chest)p.Value))
             .ToList();
         if (loc.GetFridge(onlyUnlocked: true) is { } fridge && loc.GetFridgePosition() is { } fridgeTile && (allowFridge || chestTile == fridgeTile))

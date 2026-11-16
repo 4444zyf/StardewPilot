@@ -158,5 +158,55 @@ internal static class ApprenticeTests
             var noJobs = new List<Habit> { new() { Kind = "morning", Steps = new() { new MorningStep { Activity = Act.Fish, Words = "fishing" } } } };
             Check(BriefingHabits.Offer(noJobs, null) == null, "offer with no jobs");
         });
+        yield return ("put away: same item first, then same kind, else it stays", () =>
+        {
+            var ores = new Box { Index = 0, Map = "Farm", Stacks = { ("(O)378", -15, 30), ("(O)380", -15, 5) } };
+            var minerals = new Box { Index = 1, Map = "FarmHouse", Stacks = { ("(O)80", -2, 1), ("(O)86", -2, 1), ("(O)378", -15, 2), ("(O)378", -15, 3), ("(O)176", -5, 1) } };
+            var fridge = new Box { Index = 2, Map = "FarmHouse", Stacks = { ("(O)176", -5, 12) } };
+            var boxes = new List<Box> { ores, minerals, fridge };
+            PackItem P(int slot, string id, int cat, bool tool = false) => new() { Slot = slot, Id = id, Category = cat, Stack = 5, IsTool = tool };
+            var pack = new[]
+            {
+                P(0, "(T)Axe", 0, tool: true), P(1, "(O)472", -74),       // toolbar: tool, seeds
+                P(12, "(O)378", -15),                                       // copper ore: the chest with 30 wins over two stacks of 5
+                P(13, "(O)84", -2),                                         // a new mineral: the minerals chest
+                P(14, "(O)176", -5),                                        // egg: the fridge has 12, the minerals chest 1
+                P(15, "(O)128", -4),                                        // a fish: no chest has fish
+                P(16, "(O)168", -999),                                      // litter is not a kind
+                P(17, "(O)382", -15),                                       // coal-like ore kind: the ores chest has two -15 stacks
+            };
+            var plan = PutAwayPlan.Plan(pack, boxes, includeToolbar: false, handSlot: 1);
+            string Where(int slot) { var s = plan.First(p => p.Item.Slot == slot); return s.To == null ? s.Why : $"{s.To.Index}:{s.Why}"; }
+            Check(Where(0) == PutAwayPlan.Stays_Tool, Where(0));
+            Check(Where(1) == PutAwayPlan.Stays_InHand, Where(1));
+            Check(Where(12) == "0:same item", Where(12));
+            Check(Where(13) == "1:same kind", Where(13));
+            Check(Where(14) == "2:same item", Where(14));
+            Check(Where(15) == PutAwayPlan.Stays_NoChest, Where(15));
+            Check(Where(16) == PutAwayPlan.Stays_NoChest, Where(16));
+            Check(Where(17) == "0:same kind", Where(17));
+            var maps = PutAwayPlan.ByMap(plan, "FarmHouse").Select(g => g.Key).ToList();
+            Check(string.Join(",", maps) == "FarmHouse,Farm", string.Join(",", maps));
+        });
+        yield return ("put away: the toolbar row stays unless included", () =>
+        {
+            var boxes = new List<Box> { new() { Index = 0, Map = "Farm", Stacks = { ("(O)472", -74, 9) } } };
+            var pack = new[] { new PackItem { Slot = 3, Id = "(O)472", Category = -74, Stack = 9 } };
+            Check(PutAwayPlan.Plan(pack, boxes, false, handSlot: 0)[0].Why == PutAwayPlan.Stays_Toolbar, "toolbar kept");
+            Check(PutAwayPlan.Plan(pack, boxes, true, handSlot: 0)[0].To != null, "toolbar included");
+            Check(PutAwayPlan.Plan(pack, boxes, true, handSlot: 0, only: i => i.Id == "(O)1")[0].Why == PutAwayPlan.Stays_NotAsked, "only");
+        });
+        yield return ("habits: storing is the last morning step and has a job", () =>
+        {
+            var days = Enumerable.Range(1, 4).Select(n =>
+            {
+                var d = Day(n);
+                d.Slices[0].Add(Act.Store, 10, 605); // stores before watering
+                return d;
+            });
+            var m = Morning(days)!;
+            Check(string.Join(",", m.Steps!.Select(s => s.Activity)) == "water,harvest,store", string.Join(",", m.Steps!.Select(s => s.Activity)));
+            Check(m.Steps!.Last().Job == "put_things_away", "store job");
+        });
     }
 }
