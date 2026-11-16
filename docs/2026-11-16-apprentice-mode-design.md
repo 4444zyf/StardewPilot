@@ -1,7 +1,7 @@
 # Apprentice mode: design
 
 Date: 2026-11-16
-Status: decisions settled on 2026-11-16 (see "Decisions"). No code yet. Revised after an independent review on 2026-11-16 (see "Review" at the end).
+Status: all work items done on 2026-11-16 (see the State column); not yet released. Decisions settled on 2026-11-16 (see "Decisions"). Revised after an independent review on 2026-11-16 (see "Review" at the end).
 
 Today the copilot knows the game well and the player not at all. A day played by hand leaves one line in the record: "the player played the day by hand", plus money and the shipping bin. Everything the copilot knows about how this player plays comes from what they type in the chat.
 
@@ -64,12 +64,12 @@ Everything is read from the local player's own data. Each signal carries the lab
 | Where and when | SMAPI's `Warped` event (raised for the local player only) and the clock | Raw |
 | Sowing, hoeing, foraging, fishing, crafting, cooking, breaking rocks, chopping stumps, cutting weeds, killing monsters, cracking geodes | The game's own counters on the local farmer (`seedsSown`, `dirtHoed`, `itemsForaged`, `fishCaught`, `timesFished`, `itemsCrafted`, `itemsCooked`, `rocksCrushed`, `stumpsChopped`, `weedsEliminated`, `monstersKilled`, `geodesCracked`). All exist in the game | Raw. Check: as a co-op guest, do they move only for the guest's own actions (bombs, monster kills)? |
 | Watering, and tool use in general | The game keeps no watering counter. The watcher counts how often the local farmer starts using each tool (`Farmer.UsingTool` turning on, with the tool's name). This counts swings, not tiles. A swing with an empty can counts too, and so does refilling | Raw count of swings. Check: a held button, a charged tool, the fishing rod, weapons |
-| Harvesting | Items entering the backpack that are some crop's harvest item, with no menu open, on a map that has crops | Computed |
+| Harvesting | A ready crop next to the farmer stops being ready, and items reach the local backpack within three seconds (see "Changes from A0") | Computed |
 | Gifts and talks | The player's own friendship record for each villager (gifts today, talked today). The record does not hold the gift item; it is taken from what left the backpack at that moment | Raw; the item is computed |
-| Buying | Items entering the backpack while a shop menu is open, with the shop's name and the listed price. Money is not used: in co-op the wallet is shared by default | Raw |
+| Buying | Items entering the backpack while a shop menu is open or within half a second after it closes, with the shop's name and the listed price. Money is not used: in co-op the wallet is shared by default | Raw |
 | Storing and fetching | SMAPI's `InventoryChanged` event (local player only) while a chest's menu is open. Not `ChestInventoryChanged`, which fires for any player's changes | Raw |
-| Petting | The pet's per-player record (`lastPetDay`). For farm animals the "petted" flag is shared, so it counts when it turns on for an animal close to the local farmer | Raw for the pet; computed for farm animals |
-| Collecting from machines | A ready machine within reach becomes empty at the moment an item enters the backpack | Computed. Loading machines is not read in round one |
+| Petting | The pet's per-player record (`lastPetDay`). For farm animals the "petted" flag is shared, so it counts when it turns on for an animal next to the local farmer right after the local player pressed the action button | Raw for the pet; computed for farm animals |
+| Collecting from machines | A ready machine within reach becomes empty, and its output reaches the local backpack within three seconds | Computed. Loading machines is not read in round one |
 | Mines | The deepest floor entered today | Raw |
 | Shipping | In single-player, or with separate wallets: the player's shipping bin at day end, as the day record reads it now. With a shared wallet the bin is the team's, so the line says "the farm shipped" | Raw. It has no time of day |
 | End of day | The farmer's own bedtime (`Farmer.timeWentToBed`), or passed out | Raw |
@@ -97,8 +97,8 @@ Stored as `activity/<date>.json` in the memory folder (its own folder, so the da
 ```
 
 - **Size:** one line per slice, neighbouring slices on the same map merged when control did not change, at most 20 lines a day.
-- **In the day record:** the lines are appended to the day record in both cases, whether the agent wrote the summary or the mod did.
-- **In the day seed:** the seed already carries the last three day records. To keep it small, each day contributes at most eight activity lines there, longest slices first. The rest is reached through the tool.
+- **In the day record:** the eight longest lines (in time order) are appended to the day record in both cases, whether the agent wrote the summary or the mod did, with a note of how many more the tool has.
+- **In the day seed:** the seed already carries the last three day records, so it carries those eight lines per day. The rest is reached through the tool.
 - **Save rule:** the log follows the memory rule. It is pending until the game saves; quitting without sleeping discards it. A day replayed after loading replaces the file of that date.
 - **Watcher state** is cleared when the game returns to the title screen, so nothing leaks into another farm.
 - **Kept for:** 56 game days (two seasons). Deleting older files happens at the same moment as the nightly save.
@@ -197,17 +197,31 @@ Full self-play switches every confirmation off, and "don't ask again" is permane
 
 Each can be set as a goal by itself. A0 decides whether the rest is worth building.
 
-| # | Item | Done when |
-|---|---|---|
-| A0 | Experiment: can a day be recognised? | A throwaway watcher logs the by-hand script. Every "check" in the signals table is answered, as a single player and as a co-op guest; the cost per tick is measured. Signals that cannot be told apart reliably are dropped and this doc is revised |
-| A1 | Watcher and activity log | The by-hand day matches line by line; the autopilot check passes for the jobs it is valid for; control changes cut slices; an abandoned day leaves no file |
-| A2 | Activity in the day record, and `get_activity_log` | A hand-played day's record carries the lines; the next morning's seed shows at most eight per day; "when did I last go to the mines?" is answered correctly in the game |
-| A3 | Habits, `habits.md` and `get_habits` | Unit tests pass; on the test save, after a set of made-up logs, `habits.md` shows the three habits with counts |
-| A4 | Habits in the day seed; self-play follows them | With no goal and a morning habit, self-play's plan starts with that order; with the setting off it uses the checklist |
-| A5 | "Do my usual morning" | Jobs run in the habit's order; an activity with no job is named, not attempted |
-| A6 | Co-op check, off switch, `/forget habits`, README | The guest's log shows only the guest's actions; with the setting off no file is written; the command removes the files |
+| # | Item | Done when | State |
+|---|---|---|---|
+| A0 | Experiment: can a day be recognised? | A throwaway watcher logs the by-hand script. Every "check" in the signals table is answered, as a single player and as a co-op guest; the cost per tick is measured. Signals that cannot be told apart reliably are dropped and this doc is revised | Done 2026-11-16, with the real watcher and trace logging instead of a throwaway. Answers: hoeing, sowing, watering, chest moves and shop sales by real key presses and clicks all match. Holding the tool button counts every repeat as a swing, and each one uses water (6 swings, 6 water). A mouse click that closes a menu can swing the held tool, and the watcher counted that real swing. `timesFished` moves when a cast starts (2 casts, 2 fish). Cost: about 5 microseconds per tick (single player), 22 for a co-op guest. Four changes, see "Changes from A0" |
+| A1 | Watcher and activity log | The by-hand day matches line by line; the autopilot check passes for the jobs it is valid for; control changes cut slices; an abandoned day leaves no file | Done 2026-11-16. Autopilot check with jobs watched as hand: harvest 1 Corn, petted 4 (two runs), eggs 11 + 8, machines 2 for Beer x2, gift to Abigail of Cauliflower, 2 casts with Sunfish x2 all match the job reports. Asked and self-play slices are cut and labelled; a self-play job that runs on after F10 stays self-play. Several restarts without sleeping left no file; a slept day left `activity/<date>.json` |
+| A2 | Activity in the day record, and `get_activity_log` | A hand-played day's record carries the lines; the next morning's seed shows at most eight per day; "when did I last go to the mines?" is answered correctly in the game | Done 2026-11-16. The record of summer 27 carries the lines. Asked in the game "When did I last go fishing, and where?" (the test save had no mine trip): the copilot called `get_activity_log` and answered summer 27 in Pelican Town, 2 casts, 2 Sunfish, and before that summer 24 at the Mountain |
+| A3 | Habits, `habits.md` and `get_habits` | Unit tests pass; on the test save, after a set of made-up logs, `habits.md` shows the three habits with counts | Done 2026-11-16. 11 unit tests in the game-free test project. With 14 made-up days plus one real day, `habits.md` after sleeping: mornings water (10 of 10), harvest (10 of 13), tend the animals (13 of 14); bed around 10pm (14 of 14); rainy days at the Mountain, fishing (3 of 3) |
+| A4 | Habits in the day seed; self-play follows them | With no goal and a morning habit, self-play's plan starts with that order; with the setting off it uses the checklist | Done 2026-11-16. The seed carries the habits section. F10 with no goal: the plan put tending the animals first after freeing backpack space and bed around 10pm; watering and harvesting were rightly left out (fall 1, no live crops). Self-play started mid-day did not see habits at first; `read_memory` now returns them with `followHabits`. The setting-off case is covered by agent tests |
+| A5 | "Do my usual morning" | Jobs run in the habit's order; an activity with no job is named, not attempted | Done 2026-11-16. In the game: `get_habits`, then `water_crops`, `harvest_crops`, `tend_animals` in that order. All three habit steps have jobs, so the no-job case is covered by the prompt only |
+| A6 | Co-op check, off switch, `/forget habits`, README | The guest's log shows only the guest's actions; with the setting off no file is written; the command removes the files | Done 2026-11-16. Two players on the VM: the host tended the animals (4 petted, 17 eggs) in the coop and hoed, sowed and watered on the farm with the guest standing next to it. The guest's log shows neither, and the host's own log shows its work. The nightly save reaches the guest: its activity file, day record and `habits.md` were written. Off: no file for that day, and no watching the next morning. `/forget habits` deleted 16 days and `habits.md`. The first-run notice shows once. README updated |
 
 Suggested order: A0, then A1 and A2 (useful alone as a diary the copilot can answer from), then A3 to A6.
+
+## Changes from A0
+
+The experiment changed four signals and one rule:
+
+- **Harvesting** is not "a crop's harvest item entered the backpack": cutting grass gives Fiber, which is also a crop's harvest. It is now a ready crop next to the farmer that stops being ready, credited when items reach the local backpack within three seconds (scythe harvests drop items that fly to the farmer a moment later).
+- **Shared state in co-op.** Crop and machine state and the farm animals' "petted" flag are shared. A guest standing next to the host would have credited the host's work. Now emptied crops and machines count only when their items reach the local backpack, and a farm animal counts as petted only right after the local player pressed the action button next to it.
+- **Buying:** an item left on the cursor reaches the backpack just after the shop closes; gains within half a second of a shop closing count as bought.
+- **Map names:** the farm, the farmhouse and farm buildings all show the farm's name in the game, so log lines say "the farm", "the farmhouse", "Coop".
+- **The day record** carries the eight longest lines (the same lines as the seed) and says how many more `get_activity_log` has, instead of all twenty.
+
+Not checked by hand, because the mechanism is the same as for the counters that were: crafting, cooking, monsters killed and geodes cracked.
+
+Found on the way, outside this design: a co-op guest's `go_to_bed` finds no route into its own cabin ("No known way from the farm to the cabin"), and `buy_items` called without its required `item` crashes instead of reporting the missing argument.
 
 ## Later rounds
 
