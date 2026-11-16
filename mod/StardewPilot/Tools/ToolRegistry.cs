@@ -57,6 +57,12 @@ internal sealed class ToolRegistry
         }),
     };
 
+    /// <summary>Required arguments the call left out or sent as null.</summary>
+    public static List<string> MissingArguments(ToolDef tool, JObject args) =>
+        (tool.InputSchema["required"] as JArray)?.Select(r => r.ToString())
+            .Where(r => args[r] is not { } v || v.Type == JTokenType.Null)
+            .ToList() ?? new List<string>();
+
     /// <summary>Handle an MCP tools/call request. Failures come back as isError results, not protocol errors.</summary>
     public async Task<object?> Call(JObject? parameters)
     {
@@ -64,6 +70,8 @@ internal sealed class ToolRegistry
         JObject args = parameters?["arguments"] as JObject ?? new JObject();
         if (!this.tools.TryGetValue(name, out ToolDef? tool))
             return Result($"Unknown tool '{name}'.", isError: true);
+        if (MissingArguments(tool, args) is { Count: > 0 } missing)
+            return Result($"Missing required argument{(missing.Count > 1 ? "s" : "")} for {name}: {string.Join(", ", missing)}. Check the tool's input schema and call it again.", isError: true);
 
         try
         {

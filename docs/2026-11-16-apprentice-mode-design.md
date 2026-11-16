@@ -221,7 +221,10 @@ The experiment changed four signals and one rule:
 
 Not checked by hand, because the mechanism is the same as for the counters that were: crafting, cooking, monsters killed and geodes cracked.
 
-Found on the way, outside this design: a co-op guest's `go_to_bed` finds no route into its own cabin ("No known way from the farm to the cabin"), and `buy_items` called without its required `item` crashes instead of reporting the missing argument.
+Found on the way, outside this design, and fixed on 2026-11-16:
+
+- A co-op guest's `go_to_bed` found no route into its own cabin. The cause: the walker stands below a door to use it, and a cabin's porch tile below the door is blocked. It now stands on a free tile beside or diagonally below the door when the one below is blocked (the game accepts a door within one tile). Checked in co-op: the guest walked from the farm to its bed; the host's farmhouse and coop doors still work. A failed route now says why (for example "The way to its door at 77,19 is blocked").
+- `buy_items` called without its required `item` crashed. Every tool call now checks the required arguments first and reports the missing ones.
 
 ## Later rounds
 

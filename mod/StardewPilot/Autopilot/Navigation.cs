@@ -56,6 +56,33 @@ internal static class Navigation
         return exits;
     }
 
+    /// <summary>A reason for a failed route, for the job's message.</summary>
+    private static string WhyNoRoute(string target)
+    {
+        GameLocation? loc = Game1.getLocationFromName(target);
+        if (loc == null)
+            return "That map is not loaded in this game (a co-op guest's game has only some maps).";
+        Building? b = loc.ParentBuilding;
+        Utility.ForEachBuilding(x =>
+        {
+            if (x.GetIndoorsName()?.Equals(target, StringComparison.OrdinalIgnoreCase) == true)
+                b ??= x;
+            return b == null;
+        });
+        if (b != null)
+        {
+            if (b.isUnderConstruction())
+                return "Its building is still being built.";
+            if (b.humanDoor.Value.X < 0)
+                return "Its building has no door.";
+            GameLocation? outside = b.GetParentLocation();
+            if (outside != null && ExitsOf(outside).FirstOrDefault(e => e.To.Equals(target, StringComparison.OrdinalIgnoreCase)) is { } door
+                && BlockedExits.Contains(Key(door)))
+                return $"The way to its door at {door.Tile.X},{door.Tile.Y} is blocked.";
+        }
+        return "It may be locked or not open yet.";
+    }
+
     /// <summary>Cheapest route (by estimated walking distance) from the farmer to a map, as a list of exits to use.</summary>
     public static List<Exit>? PlanRoute(string targetLocation)
     {
@@ -98,7 +125,7 @@ internal static class Navigation
             string here = Game1.currentLocation.NameOrUniqueName;
             if (here.Equals(location, StringComparison.OrdinalIgnoreCase))
                 break;
-            List<Exit> route = PlanRoute(location) ?? throw JobContext.Fail($"No known way from {Game1.currentLocation.DisplayName} to {location}. It may be locked or not open yet.");
+            List<Exit> route = PlanRoute(location) ?? throw JobContext.Fail($"No known way from {Game1.currentLocation.DisplayName} to {location}. {WhyNoRoute(location)}");
             Exit hop = route[0];
             ctx.Progress($"walking to {location} (via {hop.To})");
             bool ok = false;
@@ -332,22 +359,37 @@ internal static class Navigation
         return adjacent ? d == 1 : d == 0;
     }
 
+    /// <summary>Where to stand to use a door: below it if that tile is free, else a free tile beside or diagonally below it.</summary>
+    private static Point DoorStand(GameLocation loc, Point door)
+    {
+        Point[] choices =
+        {
+            new(door.X, door.Y + 1), new(door.X - 1, door.Y + 1), new(door.X + 1, door.Y + 1), new(door.X - 1, door.Y), new(door.X + 1, door.Y),
+        };
+        foreach (Point p in choices)
+            if (IsWalkable(loc, p))
+                return p;
+        return choices[0];
+    }
+
     /// <summary>Use one exit: walk into a warp, or open a door.</summary>
     private static IEnumerable UseExit(JobContext ctx, Exit exit, Action<bool> result)
     {
         GameLocation from = Game1.currentLocation;
         if (exit.IsDoor)
         {
-            // Stand below the door, face it, and press the action button through the game's own code.
-            var below = new Point(exit.Tile.X, exit.Tile.Y + 1);
-            foreach (object? step in WalkWithinMap(ctx, below, adjacent: false))
+            // Stand next to the door, face it, and press the action button through the game's own code. Below the
+            // door is usual; some doors (a cabin's) have their porch tile blocked, and the game also accepts a door
+            // within one tile, diagonals included.
+            var stand = DoorStand(from, exit.Tile);
+            foreach (object? step in WalkWithinMap(ctx, stand, adjacent: false))
                 yield return step;
             if (Game1.currentLocation != from)
             {
                 result(true);
                 yield break;
             }
-            Game1.player.faceDirection(Game1.up);
+            Game1.player.faceDirection(stand.Y > exit.Tile.Y ? Game1.up : stand.X < exit.Tile.X ? Game1.right : Game1.left);
             ctx.ExpectingMenu = true;
             Game1.tryToCheckAt(new Vector2(exit.Tile.X, exit.Tile.Y), Game1.player);
             yield return new WaitTicks(2);
