@@ -1,7 +1,7 @@
 # Daily helpers and chores: design
 
 Date: 2026-11-16
-Status: revised after an independent review on 2026-11-16 (see "Review" at the end); the owner set the goal to implement it, so the open decisions follow the recommendations. Implementation in progress; see the State column of the work items.
+Status: all work items done on 2026-11-16 (see the State column); not yet released. Revised after an independent review on 2026-11-16 (see "Review" at the end); the owner set the goal to implement it, so the open decisions follow the recommendations.
 
 After v0.3.1 the copilot can answer questions from the game and run single jobs. This design adds two things: helpers that make it useful every game day without being asked (Part 1), and chores that cover the daily farm work the autopilot cannot do yet (Part 2). Larger ideas are listed in Part 3 and are not designed here.
 
@@ -41,7 +41,7 @@ Answers "where is my copper?" and gives the other helpers their view of what the
 - **How obtained:** the choice of places is ours. Computed.
 - **Left out on purpose:** other players' backpacks, equipment and homes (cabins and the farmhouse if it is not the player's own), gift boxes not yet opened, dressers, items on the ground, the shipping bin.
 - **`fetchable`:** each place says whether `take_from_chest` can fetch from it: chests, fridges and the Junimo chest (see the next item).
-- **Co-op guest:** maps no player is on can be out of date. Results from them carry the same `possiblyStale` flag the state tools use.
+- **Co-op guest:** maps no player is on can be out of date. Results from them carry the same `possiblyStale` flag the state tools use. Farm building interiors are kept live for a guest (checked in a two-player session), so storage on the farm is not flagged.
 
 ### `take_from_chest`: more places
 
@@ -221,7 +221,7 @@ Each can be set as a goal by itself.
 
 | # | Item | Done when | State |
 |---|---|---|---|
-| D1 | `find_items` | Counts match the backpack, two chests on different maps, the fridge and a Junimo chest on the test save; stones, furniture and machines themselves do not appear; a co-op guest gets the stale flag | Done 2026-11-16, except the co-op guest check. On the test save: Copper Ore 42 = Farm chest 30 + house chest 12; Parsnip 5 with normal x3 and gold x2; Egg 6 in the fridge; Copper Bar 4 in the Junimo chest; Beer in a ready Keg. Map stones, furniture and the Keg itself are not listed |
+| D1 | `find_items` | Counts match the backpack, two chests on different maps, the fridge and a Junimo chest on the test save; stones, furniture and machines themselves do not appear; a co-op guest gets the stale flag | Done 2026-11-16. On the test save: Copper Ore 42 = Farm chest 30 + house chest 12; Parsnip 5 with normal x3 and gold x2; Egg 6 in the fridge; Copper Bar 4 in the Junimo chest; Beer in a ready Keg. Map stones, furniture and the Keg itself are not liste. Co-op (two-player LAN session on the VM): the guest saw the farm's chests and a chest in the coop, and not the host's farmhouse; when the host took 2 Coal from the coop chest with nobody inside, the guest saw 5 at once, so farm building interiors are live and correctly not flagged; Town is flagged possiblyStale on the guest by the same check |
 | D2 | `take_from_chest`: fridge, Junimo chest, quality | An item is fetched from each; a gold-quality item is chosen over a normal one when asked | Done 2026-11-16. Eggs from the fridge, Copper Bars from the Junimo chest, a gold Parsnip chosen when gold was asked and a normal one otherwise. A full backpack now says so instead of "no such item". Store and take also match the shown name, because several items are called "Stone" |
 | D3 | `get_gift_ideas` | For two villagers the game reacts to the gift as the tool said; the game accepts or refuses in the three gift-limit cases as the tool said; an item a bundle needs once is held back once, not entirely | Done 2026-11-16. Gus (loves Orange, birthday, 2 gifts that week): tool said 1 left, game took it, +640 points. Lewis (likes Orange): tool said 1, game took it, +45. Pierre after 2 gifts that week: tool said 0, game refused. Pam: 2 of 5 Parsnips spare (1 normal for Spring Crops, 2 gold kept for Quality Crops); Daffodil 6 of 7 |
 | D4 | `get_bundle_plan` | For one crop, one fish and one shop item the source and "available until" match the game data; an all-year item has no date; another kind of item says the source is not read; a Joja save returns the reason | Done 2026-11-16. Melon: Pierre 80g, 12 days, last planting day summer 16; Sunfish: town and forest in spring and summer, until summer 28 (matches get_fish_info); Hay and Wood: today's stock at Marnie's and Robin's; Catfish and Spring Crops in summer say "not this season"; Copper Bar and forage say the source is not read; a Joja save returns the reason. Fishing junk (Wood, Stone) is not counted as fish; fish seasons use the reached places when there are any; the Missing Bundle is left out |
