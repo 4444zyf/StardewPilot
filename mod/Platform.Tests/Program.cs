@@ -235,6 +235,9 @@ Test("pilot_diagnose: no token, key or settings link in the report", () =>
     }
 });
 
+foreach (var (name, run) in ApprenticeTests.All())
+    Test(name, run);
+
 int failed = 0;
 foreach (var (name, run) in tests)
 {

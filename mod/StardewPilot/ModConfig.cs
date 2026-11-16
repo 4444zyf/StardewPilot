@@ -42,11 +42,20 @@ public sealed class ModConfig
     /// <summary>Self-play: the agent plays by itself toward a standing goal.</summary>
     public SelfPlayConfig SelfPlay { get; set; } = new();
 
+    /// <summary>Watching what the player does to learn their habits.</summary>
+    public ApprenticeConfig Apprentice { get; set; } = new();
+
     /// <summary>One-click start: launch the pi agent together with the game.</summary>
     public LauncherConfig Launcher { get; set; } = new();
 
     /// <summary>Developer options. Leave at defaults for normal play.</summary>
     public DevConfig Dev { get; set; } = new();
+}
+
+public sealed class ApprenticeConfig
+{
+    /// <summary>Keep a diary of what the player does and learn their habits. Files stay in the mod's data folder.</summary>
+    public bool Enabled { get; set; } = true;
 }
 
 public sealed class LauncherConfig
@@ -86,6 +95,9 @@ public sealed class SelfPlayConfig
 
     /// <summary>Most model tokens per game day in self-play. 0 for no limit.</summary>
     public long DailyTokenBudget { get; set; } = 0;
+
+    /// <summary>Self-play follows the habits the copilot learned by watching the player (the goal still leads).</summary>
+    public bool FollowMyHabits { get; set; } = true;
 }
 
 public sealed class AutopilotConfig
@@ -128,4 +140,7 @@ public sealed class DevConfig
 
     /// <summary>Freeze the game clock after a save loads, so test state does not drift.</summary>
     public bool FreezeTime { get; set; } = false;
+
+    /// <summary>Tests only: the watcher counts autopilot jobs as if the player did them by hand, to compare its counts with the jobs' reports.</summary>
+    public bool WatchJobsAsHand { get; set; } = false;
 }

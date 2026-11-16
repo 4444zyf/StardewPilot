@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using StardewPilot.Guide;
 using StardewPilot.Memory;
@@ -9,13 +10,13 @@ namespace StardewPilot.Tools;
 /// <summary>Tools for the agent's memory and for self-play.</summary>
 internal static class MemoryTools
 {
-    public static void Register(ToolRegistry registry, MemoryStore memory, SelfPlay selfPlay, Func<ModConfig> config, Action<bool, string?> setSelfPlay)
+    public static void Register(ToolRegistry registry, MemoryStore memory, SelfPlay selfPlay, Func<ModConfig> config, Action<bool, string?> setSelfPlay, Func<List<string>> habits)
     {
         registry.Add(new ToolDef
         {
             Name = "read_memory",
-            Description = "What you remember about this farm: the standing goal, your notes (goals, the player's preferences, what you learned), today's plan, and summaries of recent days. Also self-play state and today's model budget.",
-            Handler = _ => Snapshot(memory, selfPlay, config()),
+            Description = "What you remember about this farm: the standing goal, your notes (goals, the player's preferences, what you learned), today's plan, summaries of recent days, and the player's habits as the mod observed them. Also self-play state and today's model budget.",
+            Handler = _ => Snapshot(memory, selfPlay, config(), habits()),
         });
 
         registry.Add(new ToolDef
@@ -70,12 +71,12 @@ internal static class MemoryTools
             Handler = a =>
             {
                 setSelfPlay(a.Bool("enabled") ?? false, a.Str("goal"));
-                return Snapshot(memory, selfPlay, config());
+                return Snapshot(memory, selfPlay, config(), habits());
             },
         });
     }
 
-    public static object Snapshot(MemoryStore memory, SelfPlay selfPlay, ModConfig cfg) => new
+    public static object Snapshot(MemoryStore memory, SelfPlay selfPlay, ModConfig cfg, List<string> habits) => new
     {
         date = MemoryStore.DateKey(),
         goal = memory.Goal.Length > 0 ? memory.Goal : null,
@@ -83,12 +84,14 @@ internal static class MemoryTools
         notes = memory.Notes.Length > 0 ? memory.Notes : null,
         todayPlan = memory.TodayPlan.Length > 0 ? memory.TodayPlan : null,
         recentDays = memory.RecentSummaries(3).Select(d => new { d.date, summary = d.text }),
+        habits = habits.Count > 0 ? habits : null,
         selfPlay = new
         {
             enabled = selfPlay.Enabled,
             stoppedBecause = selfPlay.Enabled || selfPlay.StopReason.Length == 0 ? null : selfPlay.StopReason,
             requestsToday = selfPlay.RequestsToday,
             requestBudget = cfg.SelfPlay.DailyRequestBudget > 0 ? cfg.SelfPlay.DailyRequestBudget : (int?)null,
+            followHabits = cfg.SelfPlay.FollowMyHabits && habits.Count > 0,
         },
     };
 }

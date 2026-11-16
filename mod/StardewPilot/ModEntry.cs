@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using StardewModdingAPI;
 using StardewModdingAPI.Events;
+using StardewPilot.Apprentice;
 using StardewPilot.Autopilot;
 using StardewPilot.Bridge;
 using StardewPilot.Guide;
@@ -25,6 +26,7 @@ public sealed class ModEntry : Mod
     private JobRunner? runner;
     private MemoryStore? memory;
     private AgentLauncher? launcher;
+    private ApprenticeService? apprentice;
     private readonly SelfPlay selfPlay = new();
     private bool autoLoadDone;
     private int lastBusyScreenTick;
@@ -63,11 +65,14 @@ public sealed class ModEntry : Mod
         Navigation.Config = () => this.config;
         ActionTools.Register(this.tools, this.runner, new Macros(() => this.config, helper));
         this.memory = new MemoryStore(helper.DirectoryPath, this.Monitor);
-        MemoryTools.Register(this.tools, this.memory, this.selfPlay, () => this.config, (on, goal) => this.SetSelfPlay(on, goal));
+        this.apprentice = new ApprenticeService(this.memory, () => this.config, this.Monitor, this.runner, this.selfPlay);
+        MemoryTools.Register(this.tools, this.memory, this.selfPlay, () => this.config, (on, goal) => this.SetSelfPlay(on, goal), this.apprentice.SeedLines);
         this.tools.Add(DayBriefing.Tool(this.memory, () => this.config));
+        this.apprentice.Register(this.tools);
         this.runner.Finished += (name, result) =>
         {
             this.selfPlay.LogJob(name, result);
+            this.apprentice.Watcher.OnJobFinished(name, result);
             if (name == "go_to_bed (end of day)")
                 ChatLog.Add(ChatSender.System, result.Outcome == JobOutcome.Done ? "It's late, so the autopilot put the farmer to bed." : $"Tried to go to bed: {result.Summary}");
         };
@@ -109,6 +114,7 @@ public sealed class ModEntry : Mod
             Navigation.ResetBlockedExits();
             this.selfPlay.OnDayStarted();
             this.PrepareBriefing();
+            this.apprentice!.StartDay();
             this.Notify("day_started", new { season = Game1.currentSeason, day = Game1.dayOfMonth, year = Game1.year, selfPlay = this.selfPlay.Enabled });
         };
         helper.Events.GameLoop.TimeChanged += (_, e) =>
@@ -116,7 +122,7 @@ public sealed class ModEntry : Mod
             this.Monitor.Log($"Time changed to {e.NewTime}.", LogLevel.Trace);
             this.tips.OnTimeChanged(e.NewTime);
         };
-        helper.Events.GameLoop.DayEnding += (_, _) => this.WriteFallbackSummary();
+        helper.Events.GameLoop.DayEnding += (_, _) => this.WriteFallbackSummary(this.apprentice!.EndDay());
         helper.Events.GameLoop.Saved += (_, _) =>
         {
             this.memory.Commit();
@@ -125,6 +131,7 @@ public sealed class ModEntry : Mod
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
         {
             this.runner.Stop(JobOutcome.Failed, "Returned to the title screen.");
+            this.apprentice!.Watcher.Reset();
             this.memory.Discard();
             this.selfPlay.Stop("The game returned to the title screen.");
             ChatLog.Clear();
@@ -132,7 +139,12 @@ public sealed class ModEntry : Mod
             this.briefingDue = false;
             this.Notify("returned_to_title");
         };
-        helper.Events.Player.InventoryChanged += (_, e) => this.tips.OnInventoryChanged(e);
+        helper.Events.Player.InventoryChanged += (_, e) =>
+        {
+            this.tips.OnInventoryChanged(e);
+            this.apprentice!.Watcher.OnInventoryChanged(e);
+        };
+        helper.Events.Player.Warped += (_, e) => this.apprentice!.Watcher.OnWarped(e);
         helper.Events.Input.ButtonPressed += this.OnButtonPressed;
         helper.Events.Display.RenderedHud += (_, e) => Toast.Draw(e.SpriteBatch);
         helper.Events.Content.LocaleChanged += (_, _) => StateTools.ResetNameIndex();
@@ -204,6 +216,7 @@ public sealed class ModEntry : Mod
         {
             this.runner!.Update();
             this.EnforceEndOfDay();
+            this.apprentice!.Watcher.Tick();
 
             // Single-player: hold the clock while the agent thinks (not while autopilot jobs run). Co-op cannot pause freely.
             bool hold = this.config.Dev.FreezeTime || (this.config.PauseWhileThinking && AgentState.Busy && !this.runner.IsRunning && !Context.IsMultiplayer);
@@ -262,6 +275,7 @@ public sealed class ModEntry : Mod
     {
         if (!Context.IsWorldReady)
             return;
+        this.apprentice!.Watcher.OnButtonPressed(e);
 
         if (e.Button == this.config.SelfPlay.ToggleKey)
         {
@@ -310,6 +324,12 @@ public sealed class ModEntry : Mod
         if (text.Trim().Equals("/settings", StringComparison.OrdinalIgnoreCase))
         {
             ChatLog.Add(ChatSender.System, WrapperStatus.OpenSettings(this.Monitor));
+            return;
+        }
+        if (System.Text.RegularExpressions.Regex.IsMatch(text.Trim(), @"^/forget\s+habits$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+        {
+            int removed = this.apprentice!.Forget();
+            ChatLog.Add(ChatSender.System, $"Deleted the activity diary ({removed} saved days) and the habits for this farm. Watching {(this.config.Apprentice.Enabled ? "starts again from now" : "is switched off")}.");
             return;
         }
         ChatLog.Add(ChatSender.Player, text);
@@ -426,7 +446,7 @@ public sealed class ModEntry : Mod
     /// <summary>The first message of the agent's day session: memory, and today's briefing when it is due.</summary>
     private object DaySeed()
     {
-        JObject seed = JObject.FromObject(MemoryTools.Snapshot(this.memory!, this.selfPlay, this.config));
+        JObject seed = JObject.FromObject(MemoryTools.Snapshot(this.memory!, this.selfPlay, this.config, this.apprentice!.SeedLines()));
         if (this.briefingDue)
         {
             var (facts, lines) = DayBriefing.Build(this.memory!, this.config);
@@ -512,10 +532,17 @@ public sealed class ModEntry : Mod
     /// If the agent did not summarise the day, keep a plain record so tomorrow (and the morning briefing) still has one.
     /// Written on every day, also when the player played the whole day by hand.
     /// </summary>
-    private void WriteFallbackSummary()
+    private void WriteFallbackSummary(List<string> activity)
     {
-        if (this.memory == null || this.memory.TodaySummary.Length > 0)
+        if (this.memory == null)
             return;
+        if (this.memory.TodaySummary.Length > 0)
+        {
+            // The agent wrote the summary: add what the watcher saw.
+            if (activity.Count > 0)
+                this.memory.AppendToSummary(string.Join("\n", activity));
+            return;
+        }
         int earned = Game1.player.Money - this.selfPlay.MoneyAtDayStart;
         int shipped = ShippingBinValue();
         string text = "(Written automatically: the agent did not write a summary.)\n"
@@ -523,7 +550,8 @@ public sealed class ModEntry : Mod
             + $"In the shipping bin tonight: {shipped}g.\n"
             + (this.selfPlay.JobLog.Count > 0
                 ? $"Autopilot jobs:\n- {string.Join("\n- ", this.selfPlay.JobLog)}"
-                : "No autopilot jobs: the player played the day by hand.");
+                : "No autopilot jobs: the player played the day by hand.")
+            + (activity.Count > 0 ? "\n" + string.Join("\n", activity) : "");
         this.memory.WriteSummary(text);
     }
 

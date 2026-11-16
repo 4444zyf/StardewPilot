@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <!--
-    Compiles the mod's operating-system code (mod/StardewPilot/Platform) without the game, so it can be tested on
+    Compiles the mod's operating-system code (mod/StardewPilot/Platform) and the apprentice's habit rules (Apprentice/Model) without the game, so it can be tested on
     machines that do not have Stardew Valley, such as the Windows machines in CI. Run: dotnet run -project mod/Platform.Tests
   -->
   <PropertyGroup>
@@ -14,5 +14,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../StardewPilot/Platform/*.cs" Link="Platform/%(Filename)%(Extension)" />
+    <Compile Include="../StardewPilot/Apprentice/Model/*.cs" Link="Apprentice/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

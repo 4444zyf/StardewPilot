@@ -18,7 +18,8 @@ internal sealed class MemoryStore
 {
     private readonly string root;
     private readonly IMonitor monitor;
-    private readonly Dictionary<string, string> pending = new();
+    /// <summary>Writes waiting for the game's save. A null text deletes the file.</summary>
+    private readonly Dictionary<string, string?> pending = new();
 
     public MemoryStore(string modFolder, IMonitor monitor)
     {
@@ -49,7 +50,7 @@ internal sealed class MemoryStore
     private string Read(string path)
     {
         if (this.pending.TryGetValue(path, out string? text))
-            return text;
+            return text ?? "";
         return File.Exists(path) ? File.ReadAllText(path) : "";
     }
 
@@ -75,7 +76,7 @@ internal sealed class MemoryStore
         if (Directory.Exists(this.DaysFolder))
             foreach (string f in Directory.GetFiles(this.DaysFolder, "*.md"))
                 keys.Add(Path.GetFileNameWithoutExtension(f));
-        foreach (string p in this.pending.Keys.Where(k => k.StartsWith(this.DaysFolder)))
+        foreach (string p in this.pending.Where(kv => kv.Value != null && kv.Key.StartsWith(this.DaysFolder)).Select(kv => kv.Key))
             keys.Add(Path.GetFileNameWithoutExtension(p));
         string today = DateKey();
         return keys.Where(k => k != today)
@@ -86,7 +87,7 @@ internal sealed class MemoryStore
     }
 
     /// <summary>Sortable number for Y1-spring-04 style keys.</summary>
-    private static int SortKey(string key)
+    public static int SortKey(string key)
     {
         var m = Regex.Match(key, @"^Y(\d+)-(\w+)-(\d+)$");
         if (!m.Success) return 0;
@@ -125,7 +126,82 @@ internal sealed class MemoryStore
     public void WritePlan(string text) => this.pending[this.PlanPath] = $"# Plan for {DateKey()}\n\n{text.Trim()}\n";
     public void WriteSummary(string text) => this.pending[this.SummaryPath(DateKey())] = $"# {DateKey()}\n\n{text.Trim()}\n";
 
+    /// <summary>Add lines to today's day record, whoever wrote it.</summary>
+    public void AppendToSummary(string text)
+    {
+        string path = this.SummaryPath(DateKey());
+        string current = this.Read(path);
+        this.pending[path] = current.Length == 0 ? $"# {DateKey()}\n\n{text.Trim()}\n" : current.TrimEnd() + "\n\n" + text.Trim() + "\n";
+    }
+
     public bool HasPending => this.pending.Count > 0;
+
+    // ------------------------------------------------------------ apprentice: activity logs and habits (follow the save rule)
+
+    private string ActivityFolder => Path.Combine(this.FarmFolder, "activity");
+    private string ActivityPath(string dateKey) => Path.Combine(this.ActivityFolder, dateKey + ".json");
+    private string HabitsPath => Path.Combine(this.FarmFolder, "habits.md");
+
+    public void WriteActivity(string dateKey, string json) => this.pending[this.ActivityPath(dateKey)] = json;
+
+    public void DeleteActivity(string dateKey) => this.pending[this.ActivityPath(dateKey)] = null;
+
+    /// <summary>All stored activity logs (pending writes win, pending deletes hide), as date key and JSON.</summary>
+    public List<(string date, string json)> ActivityLogs()
+    {
+        var keys = new HashSet<string>();
+        if (Directory.Exists(this.ActivityFolder))
+            foreach (string f in Directory.GetFiles(this.ActivityFolder, "*.json"))
+                keys.Add(Path.GetFileNameWithoutExtension(f));
+        foreach (string p in this.pending.Keys.Where(k => k.StartsWith(this.ActivityFolder)))
+            keys.Add(Path.GetFileNameWithoutExtension(p));
+        return keys.Select(k => (k, this.Read(this.ActivityPath(k)))).Where(x => x.Item2.Length > 0).ToList();
+    }
+
+    public string HabitsText => this.Read(this.HabitsPath);
+
+    public void WriteHabits(string text) => this.pending[this.HabitsPath] = text;
+
+    /// <summary>"/forget habits": delete the activity logs and habits at once, and drop pending ones.</summary>
+    public int ForgetApprentice()
+    {
+        foreach (string key in this.pending.Keys.Where(k => k.StartsWith(this.ActivityFolder) || k == this.HabitsPath).ToList())
+            this.pending.Remove(key);
+        int removed = 0;
+        try
+        {
+            if (Directory.Exists(this.ActivityFolder))
+            {
+                removed = Directory.GetFiles(this.ActivityFolder, "*.json").Length;
+                Directory.Delete(this.ActivityFolder, true);
+            }
+            if (File.Exists(this.HabitsPath))
+                File.Delete(this.HabitsPath);
+        }
+        catch (Exception ex)
+        {
+            this.monitor.Log($"Could not delete the activity logs: {ex.Message}", LogLevel.Warn);
+        }
+        return removed;
+    }
+
+    private string NoticePath => Path.Combine(this.FarmFolder, "apprentice-notice.txt");
+
+    /// <summary>Whether the player was told that the copilot watches and learns (written at once, like the briefing record).</summary>
+    public bool ApprenticeNoticeShown() => File.Exists(this.NoticePath);
+
+    public void MarkApprenticeNotice()
+    {
+        try
+        {
+            Directory.CreateDirectory(this.FarmFolder);
+            File.WriteAllText(this.NoticePath, DateKey() + "\n");
+        }
+        catch (Exception ex)
+        {
+            this.monitor.Log($"Could not record the apprentice notice: {ex.Message}", LogLevel.Warn);
+        }
+    }
 
     /// <summary>The game saved: commit pending memory to disk.</summary>
     public void Commit()
@@ -134,6 +210,12 @@ internal sealed class MemoryStore
         {
             try
             {
+                if (text == null)
+                {
+                    if (File.Exists(path))
+                        File.Delete(path);
+                    continue;
+                }
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 File.WriteAllText(path, text);
             }
