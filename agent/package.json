@@ -1,6 +1,6 @@
 {
   "name": "stardewpilot-agent",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "private": true,
   "description": "pi extension that connects the StardewPilot bridge mod to a pi agent",
   "license": "MIT",

@@ -11,7 +11,7 @@ See [the design](docs/2026-11-15-agent-copilot-design.md) for the full plan.
 
 ## Status
 
-Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (private chat overlay, proactive tips, instant warnings), the commanded autopilot (the agent walks the farmer between maps and runs tasks such as planting, watering, shopping and shipping when you ask), and self-play toward a goal you set. From step 5: fishing (including the minigame), a basic mines-and-combat routine, and a one-click launcher. Latest release: [v0.3.1](https://github.com/4444zyf/StardewPilot/releases/tag/v0.3.1) on GitHub (not on Nexus): removes the Claude Pro/Max sign-in, which Anthropic's terms do not allow in other apps. v0.3.0 added knowledge tools that answer from the running game, Windows fixes tested in CI, and `pilot_diagnose`.
+Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (private chat overlay, proactive tips, instant warnings), the commanded autopilot (the agent walks the farmer between maps and runs tasks such as planting, watering, shopping and shipping when you ask), and self-play toward a goal you set. From step 5: fishing (including the minigame), a basic mines-and-combat routine, and a one-click launcher. Latest release: [v0.4.0](https://github.com/4444zyf/StardewPilot/releases/tag/v0.4.0) on GitHub (not on Nexus): daily helpers (morning briefing, item finder, gift ideas, bundle plan), animal and machine chores, apprentice mode (the copilot learns your habits) and "put my things away". v0.3.1 removed the Claude Pro/Max sign-in, which Anthropic's terms do not allow in other apps. v0.3.0 added knowledge tools that answer from the running game, Windows fixes tested in CI, and `pilot_diagnose`.
 
 ## Requirements
 
