@@ -433,13 +433,39 @@ public sealed class ModEntry : Mod
         };
     }
 
-    /// <summary>If the agent did not summarise the day, keep a plain record so tomorrow still has one.</summary>
+    /// <summary>
+    /// If the agent did not summarise the day, keep a plain record so tomorrow (and the morning briefing) still has one.
+    /// Written on every day, also when the player played the whole day by hand.
+    /// </summary>
     private void WriteFallbackSummary()
     {
-        if (this.memory == null || this.memory.TodaySummary.Length > 0 || this.selfPlay.JobLog.Count == 0)
+        if (this.memory == null || this.memory.TodaySummary.Length > 0)
             return;
         int earned = Game1.player.Money - this.selfPlay.MoneyAtDayStart;
-        this.memory.WriteSummary($"(Written automatically: the agent did not write a summary.)\nMoney: {Game1.player.Money}g ({(earned >= 0 ? "+" : "")}{earned}g today, before shipping).\nActions:\n- {string.Join("\n- ", this.selfPlay.JobLog)}");
+        int shipped = ShippingBinValue();
+        string text = "(Written automatically: the agent did not write a summary.)\n"
+            + $"Money: {Game1.player.Money}g ({(earned >= 0 ? "+" : "")}{earned}g today, before shipping).\n"
+            + $"In the shipping bin tonight: {shipped}g.\n"
+            + (this.selfPlay.JobLog.Count > 0
+                ? $"Autopilot jobs:\n- {string.Join("\n- ", this.selfPlay.JobLog)}"
+                : "No autopilot jobs: the player played the day by hand.");
+        this.memory.WriteSummary(text);
+    }
+
+    /// <summary>What the local player's shipping bin and mini shipping bins will pay tonight, at the game's sell prices.</summary>
+    private static int ShippingBinValue()
+    {
+        int total = Game1.getFarm().getShippingBin(Game1.player).Where(i => i != null).Sum(i => Utility.getSellToStorePriceOfItem(i));
+        Utility.ForEachLocation(loc =>
+        {
+            foreach (StardewValley.Object obj in loc.objects.Values)
+            {
+                if (obj is StardewValley.Objects.Chest { SpecialChestType: StardewValley.Objects.Chest.SpecialChestTypes.MiniShippingBin } bin)
+                    total += bin.GetItemsForPlayer(Game1.player.UniqueMultiplayerID).Where(i => i != null).Sum(i => Utility.getSellToStorePriceOfItem(i));
+            }
+            return true;
+        });
+        return total;
     }
 
     /// <summary>Tell connected agents that something happened in the game.</summary>
