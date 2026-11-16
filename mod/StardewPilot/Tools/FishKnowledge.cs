@@ -465,5 +465,52 @@ internal static class FishKnowledge
         };
     }
 
+    /// <summary>One place a fish can be caught, for other tools.</summary>
+    public sealed record FishSource(string Map, string MapName, bool Reached, HashSet<Season>? Seasons, string? BlockedNow);
+
+    /// <summary>
+    /// Where a fish can be caught: the maps whose rules name it, the mines, and crab pots. Seasons null means all year.
+    /// BlockedNow is why it cannot bite there now (computed like possibleNow; null when it can).
+    /// </summary>
+    public static List<FishSource> Sources(string qid)
+    {
+        var list = new List<FishSource>();
+        FishRow? row = FishRow.Get(ItemRegistry.GetDataOrErrorItem(qid).ItemId);
+        foreach ((string mapName, LocationData data) in Game1.locationData)
+        {
+            if (data.Fish == null || mapName is "Temp" or "fishingGame")
+                continue;
+            if (mapName.StartsWith("Farm_") && mapName != "Farm_" + Game1.GetFarmTypeKey())
+                continue;
+            foreach (SpawnFishData rule in data.Fish)
+            {
+                if (ItemsOf(rule) is not { } items || !items.Contains(qid))
+                    continue;
+                string map = mapName == "Default" ? "Town" : mapName.StartsWith("Farm_") ? "Farm" : mapName;
+                GameLocation? loc = Game1.getLocationFromName(map);
+                string? blocked = loc == null ? "map not loaded" : RuleBlockedNow(loc, rule, qid) ?? (rule.IgnoreFishDataRequirements ? null : row?.BlockedNow(loc));
+                list.Add(new FishSource(map, mapName == "Default" ? "any map with water" : MapDisplayName(mapName), Reached(mapName), ParseSeasons(SeasonText(rule)), blocked));
+            }
+        }
+        foreach (var m in MineTable.Where(m => m.Items.Contains(qid)))
+            list.Add(new FishSource("UndergroundMine", $"The Mines, {m.Area} ({m.Floors})", Game1.player.deepestMineLevel >= 1, null, row?.BlockedNow(Game1.getFarm()) is { } b && b != "wrong time of day" ? b : null));
+        if (row?.IsTrap == true)
+            list.Add(new FishSource("CrabPot", $"crab pots in {row.TrapWater} water", true, null, null));
+        return list;
+    }
+
+    private static HashSet<Season>? ParseSeasons(string? text)
+    {
+        if (text == null)
+            return null;
+        var set = new HashSet<Season>();
+        foreach (string part in text.Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (Enum.TryParse(part, ignoreCase: true, out Season season))
+                set.Add(season);
+        }
+        return set.Count > 0 ? set : null;
+    }
+
     private static string Display(string qid) => ItemRegistry.GetDataOrErrorItem(qid).DisplayName;
 }

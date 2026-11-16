@@ -18,6 +18,19 @@ internal static class BundleHelper
             && !p.mailReceived.Contains("ccIsComplete");
     }
 
+    /// <summary>Why the farmer has no bundles to work on, or null when bundles are visible.</summary>
+    public static string? HiddenReason()
+    {
+        Farmer p = Game1.player;
+        if (p.mailReceived.Contains("JojaMember"))
+            return "The farm joined Joja; the Community Center is being converted, so there are no bundles.";
+        if (p.mailReceived.Contains("ccIsComplete"))
+            return "The Community Center is finished; there are no bundles left.";
+        if (!p.hasOrWillReceiveMail("canReadJunimoText"))
+            return "The farmer cannot read the Community Center's bundles yet.";
+        return null;
+    }
+
     /// <summary>The display name of an unfinished bundle that still needs this item, or null.</summary>
     public static string? BundleNeeding(Item item)
     {
@@ -67,6 +80,9 @@ internal static class BundleHelper
         {
             string[] keyParts = pair.Key.Split('/');
             if (keyParts.Length < 2 || !int.TryParse(keyParts[1], out int index) || cc.isBundleComplete(index))
+                continue;
+            // The Missing Bundle in the abandoned JojaMart only opens after the Community Center is finished.
+            if (keyParts[0] == "Abandoned Joja Mart")
                 continue;
             string[] fields = pair.Value.Split('/');
             if (fields.Length < 3)

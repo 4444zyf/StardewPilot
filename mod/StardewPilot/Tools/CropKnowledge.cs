@@ -18,7 +18,7 @@ namespace StardewPilot.Tools;
 internal static class CropKnowledge
 {
     /// <summary>Shops that sell seeds, with the map that must have been visited for the shop to count as reached.</summary>
-    private static readonly (string Shop, string Name, string Map)[] SeedShops =
+    public static readonly (string Shop, string Name, string Map)[] SeedShops =
     {
         ("SeedShop", "Pierre's General Store", "SeedShop"),
         ("Joja", "JojaMart", "JojaMart"),
@@ -41,7 +41,7 @@ internal static class CropKnowledge
     };
 
     /// <summary>Pierre's and Joja's regular seed entries, whatever season their condition names.</summary>
-    private static void AddRegularSources(Dictionary<string, List<(string shop, int price, bool reached)>> sources)
+    public static void AddRegularSources(Dictionary<string, List<(string shop, int price, bool reached)>> sources)
     {
         var shops = DataLoader.Shops(Game1.content);
         foreach (var (shop, name, map) in SeedShops.Where(x => x.Shop is "SeedShop" or "Joja"))
