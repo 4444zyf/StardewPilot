@@ -115,7 +115,7 @@ Also found: on macOS the agent's two halves compute the config folder slightly d
 
 ### Step 1: fix what reading the code already shows
 
-Status: implemented on Linux on 2026-11-15 (all four points); unit tests pass. Proof on Windows comes with step 2.
+Status: implemented on 2026-11-15 (all four points) and confirmed on Windows by CI on 2026-11-16 (the wrapper starts and stops the real pi there; the status-file replace needed and got its retry).
 
 - **Start pi without the `.cmd`.** The wrapper already finds pi's package folder. It reads the entry file from the package's own `bin` field and starts it with the same Node that runs the wrapper. The only program the mod starts is then `node`, a normal executable on every system.
 - **Direct start without the wrapper** (`Launcher.UseWrapper` off) is a development option. On Windows it is not supported; the mod says so instead of failing.
