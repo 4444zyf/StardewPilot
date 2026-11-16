@@ -245,3 +245,13 @@ test("the answer to the briefing seed goes to the game as a briefing", async () 
 	const sent = sentToGame().filter((m) => m.method === "chat/agent_message").map((m) => m.params);
 	assert.deepEqual(sent, [{ text: "Sunny, good luck.", kind: "briefing" }, { text: "Hello.", kind: "reply" }]);
 });
+
+test("the briefing keeps the habit offer's phrase and words the usual day as a habit", () => {
+	const facts = { usualDay: { condition: "rain", text: "Rainy days: mostly at the beach, fishing (4 of 5)" }, habitOffer: { steps: ["water"], say: "do my usual morning" } };
+	const text = daySeedMessage({ date: "Y1-summer-09", briefing: { facts, fallback: "Rain today.", gameLanguage: "en" } });
+	assert.match(text, /\[Morning briefing\]/);
+	assert.match(text, /habitOffer fact is shown only once/);
+	assert.match(text, /"say" phrase exactly/);
+	assert.match(text, /you usually/);
+	assert.match(text, /do my usual morning/);
+});

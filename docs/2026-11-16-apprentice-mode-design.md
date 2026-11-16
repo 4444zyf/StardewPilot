@@ -233,8 +233,8 @@ Not designed here.
 - **Keep or sell:** which items the player ships, stores or processes. It needs item flow across days and a signal for loading machines.
 - **Where things go:** which chest gets which kind of item. Needs a way to identify a chest that survives it being moved.
 - **People:** whom the player talks to and gifts most.
-- **A personal line in the morning briefing** ("rain today; you are usually at the lake").
-- **A one-time offer** when a morning habit first appears.
+- **A personal line in the morning briefing** ("rain today; you are usually at the lake"). Done: [habits in the briefing](2026-11-16-habits-in-the-briefing-design.md).
+- **A one-time offer** when a morning habit first appears. Done: [habits in the briefing](2026-11-16-habits-in-the-briefing-design.md).
 - **Routines proposed from habits**, in the routines design.
 
 The first three produce habits about irreversible actions and fall under the rule above.

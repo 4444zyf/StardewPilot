@@ -135,5 +135,28 @@ internal static class ApprenticeTests
             Check(lines.Count == 5 && lines[^1].StartsWith("22:00 went to bed"), string.Join(" | ", lines));
             Check(lines[0].Contains(" M0:") && lines[3].Contains(" M9:"), string.Join(" | ", lines));
         });
+        yield return ("briefing: rain wins over the weekday, and only a matching habit is used", () =>
+        {
+            var habits = new List<Habit>
+            {
+                new() { Kind = "day-type", Condition = "Mon", Text = "Mondays: mostly at Town" },
+                new() { Kind = "day-type", Condition = "rain", Text = "Rainy days: mostly at Beach, fishing (4 of 5)" },
+            };
+            Check(BriefingHabits.UsualDay(habits, true, "Mon")!.Condition == "rain", "rain first");
+            Check(BriefingHabits.UsualDay(habits, false, "Mon")!.Condition == "Mon", "weekday");
+            Check(BriefingHabits.UsualDay(habits, false, "Tue") == null, "no habit for Tuesday");
+            Check(BriefingHabits.UsualDayLine(habits[1]) == "Rain today. Rainy days: mostly at Beach, fishing (4 of 5).", BriefingHabits.UsualDayLine(habits[1]));
+        });
+        yield return ("briefing: the morning offer is made once per list of jobs", () =>
+        {
+            var habits = HabitFinder.Find(Enumerable.Range(1, 4).Select(n => Day(n)), new Names());
+            var offer = BriefingHabits.Offer(habits, null);
+            Check(offer != null && BriefingHabits.OfferKey(offer) == "water_crops,harvest_crops", "offer " + (offer == null ? "none" : BriefingHabits.OfferKey(offer)));
+            Check(BriefingHabits.OfferLine(offer!).Contains("water, then harvest") && BriefingHabits.OfferLine(offer!).Contains("\"do my usual morning\""), BriefingHabits.OfferLine(offer!));
+            Check(BriefingHabits.Offer(habits, "water_crops,harvest_crops") == null, "offered twice");
+            Check(BriefingHabits.Offer(habits, "water_crops") != null, "a changed habit is offered again");
+            var noJobs = new List<Habit> { new() { Kind = "morning", Steps = new() { new MorningStep { Activity = Act.Fish, Words = "fishing" } } } };
+            Check(BriefingHabits.Offer(noJobs, null) == null, "offer with no jobs");
+        });
     }
 }

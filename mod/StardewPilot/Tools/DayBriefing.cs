@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using StardewModdingAPI;
+using StardewPilot.Apprentice;
 using StardewPilot.Guide;
 using StardewPilot.Memory;
 using StardewValley;
@@ -20,18 +21,19 @@ namespace StardewPilot.Tools;
 /// </summary>
 internal static class DayBriefing
 {
-    public static ToolDef Tool(MemoryStore memory, Func<ModConfig> config) => new()
+    public static ToolDef Tool(MemoryStore memory, Func<ModConfig> config, ApprenticeService apprentice) => new()
     {
         Name = "get_day_briefing",
         Description =
             "Today's briefing facts: weather today and tomorrow, luck (the TV fortune teller's levels), birthdays with the best gift the player owns, a festival, " +
             "crops ready, crops that die tomorrow, machines with output ready, the Traveling Cart's bundle items, quests ending soon, a finished tool upgrade, " +
-            "bundle items about to go out of season, and yesterday's record. Only parts with something to report are included.",
-        Handler = _ => Build(memory, config()).facts,
+            "bundle items about to go out of season, what the player usually does on a day like today (a habit), and yesterday's record. Only parts with something to report are included.",
+        Handler = _ => Build(memory, config(), apprentice, morning: false, selfPlay: false).facts,
     };
 
     /// <summary>The facts, and a plain-text version the mod shows when no agent words them.</summary>
-    public static (Dictionary<string, object?> facts, List<string> lines) Build(MemoryStore memory, ModConfig cfg)
+    /// <param name="morning">The morning briefing itself (not the tool): it may carry the one-time offer of the usual morning.</param>
+    public static (Dictionary<string, object?> facts, List<string> lines) Build(MemoryStore memory, ModConfig cfg, ApprenticeService apprentice, bool morning, bool selfPlay)
     {
         var facts = new Dictionary<string, object?>();
         var lines = new List<string>();
@@ -167,6 +169,8 @@ internal static class DayBriefing
             if (bin.Success && int.Parse(bin.Groups[1].Value) > 0)
                 lines.Add($"Yesterday's shipping paid {bin.Groups[1].Value}g.");
         }
+
+        apprentice.AddToBriefing(facts, lines, morning, selfPlay);
 
         facts["how"] = "Weather, birthdays, festival, quests, cart stock: raw or asked of the game. Luck: the TV's thresholds applied by the mod. Crops ready and dying, gift ideas, last chances: computed.";
         return (facts, lines);

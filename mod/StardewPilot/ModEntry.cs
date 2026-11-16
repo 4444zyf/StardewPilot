@@ -67,7 +67,7 @@ public sealed class ModEntry : Mod
         this.memory = new MemoryStore(helper.DirectoryPath, this.Monitor);
         this.apprentice = new ApprenticeService(this.memory, () => this.config, this.Monitor, this.runner, this.selfPlay);
         MemoryTools.Register(this.tools, this.memory, this.selfPlay, () => this.config, (on, goal) => this.SetSelfPlay(on, goal), this.apprentice.SeedLines);
-        this.tools.Add(DayBriefing.Tool(this.memory, () => this.config));
+        this.tools.Add(DayBriefing.Tool(this.memory, () => this.config, this.apprentice));
         this.apprentice.Register(this.tools);
         this.runner.Finished += (name, result) =>
         {
@@ -353,6 +353,7 @@ public sealed class ModEntry : Mod
             {
                 this.briefingDue = false;
                 this.memory?.MarkBriefingShown();
+                this.apprentice?.BriefingShown(this.selfPlay.Enabled);
             }
             ChatLog.Add(ChatSender.Tip, text);
         }
@@ -437,8 +438,9 @@ public sealed class ModEntry : Mod
         this.briefingDue = false;
         if (this.memory == null || !Context.IsWorldReady)
             return;
-        var (_, lines) = DayBriefing.Build(this.memory, this.config);
+        var (_, lines) = DayBriefing.Build(this.memory, this.config, this.apprentice!, morning: true, selfPlay: this.selfPlay.Enabled);
         this.memory.MarkBriefingShown();
+        this.apprentice?.BriefingShown(this.selfPlay.Enabled);
         this.Monitor.Log($"Morning briefing shown as fixed text: {string.Join(" | ", lines)}", LogLevel.Debug);
         ChatLog.Add(ChatSender.Tip, "Good morning! " + string.Join("\n", lines));
     }
@@ -449,7 +451,7 @@ public sealed class ModEntry : Mod
         JObject seed = JObject.FromObject(MemoryTools.Snapshot(this.memory!, this.selfPlay, this.config, this.apprentice!.SeedLines()));
         if (this.briefingDue)
         {
-            var (facts, lines) = DayBriefing.Build(this.memory!, this.config);
+            var (facts, lines) = DayBriefing.Build(this.memory!, this.config, this.apprentice!, morning: true, selfPlay: this.selfPlay.Enabled);
             seed["briefing"] = JObject.FromObject(new
             {
                 facts,

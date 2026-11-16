@@ -506,7 +506,9 @@ export function daySeedMessage(seed: MemorySeed): string {
 				"[Morning briefing]",
 				`Facts: ${JSON.stringify(seed.briefing.facts ?? {})}`,
 				`Default wording, one point per line:\n${seed.briefing.fallback ?? ""}`,
-				`Rewrite the default wording as a short, friendly morning briefing in the game's language (${language}): keep every point, at most five lines, most important first (birthdays, a festival, last chances and quests ending before weather), plain text, no heading, no question back.`,
+				`Rewrite the default wording as a short, friendly morning briefing in the game's language (${language}): keep every point, at most five lines, most important first (birthdays, a festival, last chances and quests ending before weather), plain text, no heading, no question back. ` +
+					`A usualDay fact is the player's habit, observed by the mod: say it as "you usually ...", never as advice. ` +
+					`A habitOffer fact is shown only once: keep it as its own line and quote its "say" phrase exactly as written.`,
 				"Answer from these facts only: do not call tools and do not add facts or advice of your own. Computed parts (gift ideas, last chances) are estimates: word them that way. Then wait for the player's questions or commands.",
 			].join("\n"),
 		);

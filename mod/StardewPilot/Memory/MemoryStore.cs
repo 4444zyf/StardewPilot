@@ -177,6 +177,8 @@ internal sealed class MemoryStore
             }
             if (File.Exists(this.HabitsPath))
                 File.Delete(this.HabitsPath);
+            if (File.Exists(this.OfferPath))
+                File.Delete(this.OfferPath);
         }
         catch (Exception ex)
         {
@@ -186,6 +188,24 @@ internal sealed class MemoryStore
     }
 
     private string NoticePath => Path.Combine(this.FarmFolder, "apprentice-notice.txt");
+
+    private string OfferPath => Path.Combine(this.FarmFolder, "apprentice-offer.txt");
+
+    /// <summary>The list of jobs last offered as "your usual morning" in the briefing, or null (written at once, like the briefing record).</summary>
+    public string? HabitOfferShown() => File.Exists(this.OfferPath) ? File.ReadAllText(this.OfferPath).Trim() : null;
+
+    public void MarkHabitOffer(string key)
+    {
+        try
+        {
+            Directory.CreateDirectory(this.FarmFolder);
+            File.WriteAllText(this.OfferPath, key + "\n");
+        }
+        catch (Exception ex)
+        {
+            this.monitor.Log($"Could not record the habit offer: {ex.Message}", LogLevel.Warn);
+        }
+    }
 
     /// <summary>Whether the player was told that the copilot watches and learns (written at once, like the briefing record).</summary>
     public bool ApprenticeNoticeShown() => File.Exists(this.NoticePath);

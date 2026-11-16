@@ -107,6 +107,46 @@ internal sealed class ApprenticeService
     /// <summary>Habit lines for the day seed (at most ten), or nothing when watching is off.</summary>
     public List<string> SeedLines() => this.Enabled ? this.Habits().Select(h => h.Text).Take(10).ToList() : new();
 
+    /// <summary>
+    /// The briefing's habit parts: the habit for today's kind of day and, on a morning briefing, the one-time offer of the
+    /// usual morning. Nothing when watching is off or in self-play (the agent plans from the habits there).
+    /// </summary>
+    public void AddToBriefing(Dictionary<string, object?> facts, List<string> lines, bool morning, bool selfPlay)
+    {
+        if (!this.Enabled || selfPlay)
+            return;
+        List<Habit> habits = this.Habits();
+        Farm farm = Game1.getFarm();
+        if (BriefingHabits.UsualDay(habits, farm.IsRainingHere(), HabitFinder.Weekdays[(Game1.dayOfMonth - 1) % 7]) is { } day)
+        {
+            facts["usualDay"] = new { condition = day.Condition, text = day.Text, days = day.Days, ofDays = day.OfDays, how = "Computed from the activity logs: a habit, not a plan or advice." };
+            lines.Add(BriefingHabits.UsualDayLine(day));
+        }
+        if (morning && BriefingHabits.Offer(habits, this.memory.HabitOfferShown()) is { } steps)
+        {
+            facts["habitOffer"] = new
+            {
+                steps = steps.Select(s => s.Words),
+                say = BriefingHabits.OfferPhrase,
+                note = "Shown once. Tell the player the exact phrase; nothing runs until they say it.",
+            };
+            lines.Add(BriefingHabits.OfferLine(steps));
+        }
+    }
+
+    /// <summary>The morning briefing was shown: the offer in it (if any) is not made again for the same habit.</summary>
+    public void BriefingShown(bool selfPlay)
+    {
+        if (!this.Enabled || selfPlay)
+            return;
+        var steps = BriefingHabits.Offer(this.Habits(), this.memory.HabitOfferShown());
+        if (steps != null)
+        {
+            this.memory.MarkHabitOffer(BriefingHabits.OfferKey(steps));
+            this.monitor.Log($"Apprentice: offered the usual morning ({BriefingHabits.OfferKey(steps)}).", LogLevel.Debug);
+        }
+    }
+
     public int Forget()
     {
         int removed = this.memory.ForgetApprentice();
