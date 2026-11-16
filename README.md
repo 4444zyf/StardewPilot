@@ -75,6 +75,7 @@ Settings in the mod's `config.json`:
 | `MaxTipsPerDay` | `6` | Proactive tips per game day (warnings do not count) |
 | `Warnings` | `true` | Instant fixed-text warnings |
 | `TellMeEverything` | `false` | Allow spoilers about content the save has not reached |
+| `MorningBriefing` | `true` | A short briefing at the start of each game day (off when `Chattiness` is `Off`) |
 | `PauseWhileThinking` | `true` | Single-player: stop the clock while the agent thinks (not while it acts) |
 | `Autopilot.ToggleKey` | `F9` | Switches the autopilot off and on |
 | `Autopilot.StopWorkAt` | `2330` | Game time when work stops and the farmer goes to bed |
@@ -113,6 +114,11 @@ Settings in the mod's `config.json`:
 | `get_machine_info` | What a machine accepts and what it makes from an item, and how long it takes |
 | `get_collections` | Collections progress and what can still go to the museum |
 | `get_npc_schedule` | Where a villager is now and the rest of today's plan |
+| `find_items` | Where the player's things are: backpack, chests on every map, fridges, the Junimo chest, ready machine output |
+| `get_gift_ideas` | Gifts the player owns that a villager loves or likes, and gifts left today and this week |
+| `get_bundle_plan` | What the bundles still need, what the player has, where to get the rest and until when |
+| `get_day_briefing` | Today's overview: weather, luck, birthdays, what is ready, last chances, yesterday's result |
+| `get_animals` | Farm animals, pets and their buildings: petted, produce ready, feeding spots, hay |
 
 The knowledge tools answer from the running game: its data files, and its own functions where it has one (machine output, sell prices, craftable counts, the Collections page). Each result says which parts were computed by the mod instead (for example "possible now" for fish and gold per day for crops). The mod does not read the wiki.
 
@@ -127,7 +133,9 @@ Actions (each returns done, partly done or failed, with a reason):
 | `collect_forage` | Picks up forage on a map |
 | `buy_items` | Walks to the shop and buys through the shop menu; respects opening hours |
 | `ship_items` | Puts items in the shipping bin (asks first; keeps one of any bundle item) |
-| `store_in_chest`, `take_from_chest` | Moves items between the backpack and a chest |
+| `store_in_chest`, `take_from_chest` | Moves items between the backpack and a chest; takes from fridges and the Junimo chest too, optionally by quality |
+| `tend_animals` | Picks up eggs and grabber contents, puts out hay, pets the animals and the pet, milks or shears (not after 7pm) |
+| `tend_machines` | Collects ready machine output on a map, and can refill one kind of machine with an item |
 | `talk_to`, `give_gift` | Talks to or gifts a villager (gifting asks first) |
 | `fish` | Finds open water, casts, strikes and plays the fishing minigame |
 | `explore_mines` | Goes down mine floors: takes ladders, breaks rocks to find them, fights monsters next to the farmer; stops at low health or energy |
