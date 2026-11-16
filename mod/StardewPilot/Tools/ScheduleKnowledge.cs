@@ -36,6 +36,9 @@ internal static class ScheduleKnowledge
             mapName = npc.currentLocation?.DisplayName,
             tile = npc.currentLocation == null ? null : StateTools.Tile(npc.TilePoint.X, npc.TilePoint.Y),
             moving = npc.isMoving() || npc.controller != null,
+            // A co-op guest only gets live updates for maps where a player is; elsewhere this can be out of date
+            // (seen in a two-player test: the guest had Pierre at his next spot while the host had him at the previous one).
+            possiblyStale = npc.currentLocation != null && StateTools.IsPossiblyStale(npc.currentLocation) ? true : (bool?)null,
         };
 
         Dictionary<int, SchedulePathDescription>? schedule = npc.Schedule;
@@ -50,7 +53,7 @@ internal static class ScheduleKnowledge
                 plan = (object?)null,
                 note = Context.IsMainPlayer
                     ? "No moving plan today: the villager stays where they are, or the game has not given them one (festival, event, or a mod)."
-                    : "This is a co-op guest's game, which does not have the villagers' plans; only where they are now is known.",
+                    : "This is a co-op guest's game, which does not have the villagers' plans (checked in a two-player session); only where they are now is known, and that can be out of date for maps no player is on.",
                 how = "Raw: the villager's position now.",
             };
         }
