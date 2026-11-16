@@ -99,14 +99,15 @@ internal static class ActionTools
             a => ctx => macros.Store(ctx, (a["items"] as JArray)?.Select(t => t.ToString()).ToList(), a.Bool("allButTools") ?? false, a.Int("x") is int x && a.Int("y") is int y ? new Point(x, y) : null, a.Str("location")));
 
         Action("take_from_chest",
-            "Take an item out of a chest (the nearest one in the map, or the one at x, y).",
+            "Take an item out of a chest, fridge or Junimo chest: the one at x, y, or else the nearest one in the map that has the item. find_items tells where things are. Optionally only items of at least a given quality (lowest good-enough quality is taken first).",
             Schema.Object(
                 ("item", Schema.String("Item name."), true),
                 ("count", Schema.Integer("How many. Default all."), false),
                 ("location", Schema.String("Map with the chest. Default the current map."), false),
-                ("x", Tile("Chest tile x."), false),
-                ("y", Tile("Chest tile y."), false)),
-            a => ctx => macros.Take(ctx, a.Str("item")!, a.Int("count"), a.Int("x") is int x && a.Int("y") is int y ? new Point(x, y) : null, a.Str("location")));
+                ("x", Tile("Chest or fridge tile x."), false),
+                ("y", Tile("Chest or fridge tile y."), false),
+                ("minQuality", Schema.Enum("Only take items of this quality or better. Default any.", "normal", "silver", "gold", "iridium"), false)),
+            a => ctx => macros.Take(ctx, a.Str("item")!, a.Int("count"), a.Int("x") is int x && a.Int("y") is int y ? new Point(x, y) : null, a.Str("location"), QualityValue(a.Str("minQuality"))));
 
         Action("talk_to",
             "Walk to a villager and talk to them (raises friendship once a day). Returns what they said.",
@@ -190,4 +191,12 @@ internal static class ActionTools
             },
         });
     }
+
+    private static int QualityValue(string? name) => name?.ToLowerInvariant() switch
+    {
+        "silver" => 1,
+        "gold" => 2,
+        "iridium" => 4,
+        _ => 0,
+    };
 }

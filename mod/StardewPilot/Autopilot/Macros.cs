@@ -742,7 +742,7 @@ internal sealed class Macros
         Chest box = chest!;
         var stored = new List<string>();
         var toStore = Game1.player.Items.Where(i => i != null && !(i is Tool) &&
-            (allButTools || (items?.Any(q => StateTools.FindItemId(q) == i.QualifiedItemId) ?? false))).ToList();
+            (allButTools || (items?.Any(q => StateTools.FindItemId(q) == i.QualifiedItemId || i.DisplayName.Equals(q.Trim(), StringComparison.OrdinalIgnoreCase)) ?? false))).ToList();
         foreach (Item item in toStore)
         {
             Item? left = box.addItem(item);
@@ -753,52 +753,77 @@ internal sealed class Macros
         ctx.Progress();
     }
 
-    public IEnumerable Take(JobContext ctx, string itemQuery, int? count, Point? chestTile, string? location)
+    public IEnumerable Take(JobContext ctx, string itemQuery, int? count, Point? chestTile, string? location, int minQuality = 0)
     {
-        foreach (object? s in this.GoToChest(ctx, chestTile, location, c => chest = c))
+        string qid = StateTools.FindItemId(itemQuery) ?? throw JobContext.Fail($"No item called '{itemQuery}'.");
+        string name = ItemRegistry.GetDataOrErrorItem(qid).DisplayName;
+        // Several items can share a shown name (there are many "Stone"s): match the name as well as the id.
+        bool Matches(Item? i) => i != null && (i.QualifiedItemId == qid || i.DisplayName.Equals(itemQuery.Trim(), StringComparison.OrdinalIgnoreCase)) && i.Quality >= minQuality;
+        // Without a tile, go to the nearest chest (or fridge) that has the item.
+        foreach (object? s in this.GoToChest(ctx, chestTile, location, c => chest = c, prefer: c => c.GetItemsForPlayer().Any(Matches), allowFridge: true))
             yield return s;
         Chest box = chest!;
-        string qid = StateTools.FindItemId(itemQuery) ?? throw JobContext.Fail($"No item called '{itemQuery}'.");
+        StardewValley.Inventories.IInventory items = box.GetItemsForPlayer();
         int want = count ?? int.MaxValue, got = 0;
-        foreach (Item item in box.Items.Where(i => i?.QualifiedItemId == qid).ToList())
+        // Lowest quality that is good enough first, so better items stay for later.
+        foreach (Item item in items.Where(Matches).OrderBy(i => i.Quality).ToList())
         {
             if (got >= want) break;
             int n = Math.Min(want - got, item.Stack);
             Item part = n == item.Stack ? item : item.getOne();
             part.Stack = n;
             if (!Game1.player.couldInventoryAcceptThisItem(part)) { ctx.Problems.Add("The backpack is full."); break; }
+            if (part == item) items.Remove(item); else item.Stack -= n;
             Game1.player.addItemToInventory(part);
-            if (part == item) box.Items.Remove(item); else item.Stack -= n;
             got += n;
         }
-        box.clearNulls();
+        items.RemoveEmptySlots();
+        if (got == 0 && ctx.Problems.Contains("The backpack is full."))
+            throw JobContext.Fail($"The backpack is full, so no {name} could be taken.");
         if (got == 0)
-            throw JobContext.Fail($"That chest has no {ItemRegistry.GetDataOrErrorItem(qid).DisplayName}.");
-        ctx.Report["took"] = $"{ItemRegistry.GetDataOrErrorItem(qid).DisplayName} x{got}";
+            throw JobContext.Fail(minQuality > 0 ? $"That chest has no {name} of {ItemFinder.QualityName(minQuality)} quality or better." : $"That chest has no {name}.");
+        ctx.Report["took"] = $"{name} x{got}";
         ctx.Progress();
     }
 
     private Chest? chest;
 
-    private IEnumerable GoToChest(JobContext ctx, Point? chestTile, string? location, Action<Chest> found)
+    /// <summary>
+    /// Walk next to a chest: the one at the tile, else the nearest one <paramref name="prefer"/> accepts, else the nearest.
+    /// Player chests (Junimo chests and mini-fridges included) always count; the house fridge only when allowed or named by its tile.
+    /// </summary>
+    private IEnumerable GoToChest(JobContext ctx, Point? chestTile, string? location, Action<Chest> found, Func<Chest, bool>? prefer = null, bool allowFridge = false)
     {
         GameLocation loc = StateTools.ResolveLocation(location);
         foreach (object? s in Navigation.WalkTo(ctx, loc.NameOrUniqueName, null))
             yield return s;
         Point me = Game1.player.TilePoint;
-        var chests = loc.objects.Pairs.Where(p => p.Value is Chest c && c.playerChest.Value).ToList();
+        var chests = loc.objects.Pairs
+            .Where(p => p.Value is Chest c && c.playerChest.Value && !c.giftbox.Value)
+            .Select(p => (tile: new Point((int)p.Key.X, (int)p.Key.Y), box: (Chest)p.Value))
+            .ToList();
+        if (loc.GetFridge(onlyUnlocked: true) is { } fridge && loc.GetFridgePosition() is { } fridgeTile && (allowFridge || chestTile == fridgeTile))
+            chests.Add((fridgeTile, fridge));
         if (chests.Count == 0)
             throw JobContext.Fail($"There is no chest in {loc.DisplayName}.");
-        var pick = chestTile is { } t
-            ? chests.FirstOrDefault(p => (int)p.Key.X == t.X && (int)p.Key.Y == t.Y)
-            : chests.OrderBy(p => Math.Abs(p.Key.X - me.X) + Math.Abs(p.Key.Y - me.Y)).First();
-        if (pick.Value == null)
-            throw JobContext.Fail("No chest at that tile.");
-        Point at = new((int)pick.Key.X, (int)pick.Key.Y);
-        foreach (object? s in Navigation.WalkWithinMap(ctx, at, adjacent: true))
+        (Point tile, Chest box) pick;
+        if (chestTile is { } t)
+        {
+            pick = chests.FirstOrDefault(c => c.tile == t);
+            if (pick.box == null)
+                throw JobContext.Fail("No chest or fridge at that tile.");
+        }
+        else
+        {
+            var candidates = prefer == null ? chests : chests.Where(c => prefer(c.box)).ToList();
+            if (candidates.Count == 0)
+                candidates = chests;
+            pick = candidates.OrderBy(c => Math.Abs(c.tile.X - me.X) + Math.Abs(c.tile.Y - me.Y)).First();
+        }
+        foreach (object? s in Navigation.WalkWithinMap(ctx, pick.tile, adjacent: true))
             yield return s;
-        Actions.Face(at);
-        found((Chest)pick.Value);
+        Actions.Face(pick.tile);
+        found(pick.box);
     }
 
     // ---------------------------------------------------------------- people

@@ -50,6 +50,8 @@ public sealed class ModEntry : Mod
         this.tools.Add(MachineKnowledge.Tool());
         this.tools.Add(CollectionKnowledge.Tool());
         this.tools.Add(ScheduleKnowledge.Tool());
+        this.tools.Add(ItemFinder.Tool());
+        this.tools.Add(GiftIdeas.Tool());
         this.runner = new JobRunner(this.Monitor, () => this.config);
         Navigation.Config = () => this.config;
         ActionTools.Register(this.tools, this.runner, new Macros(() => this.config, helper));
