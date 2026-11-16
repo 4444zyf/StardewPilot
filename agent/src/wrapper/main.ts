@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { loadSettings, piDirFor, saveSettings, statusPath, type WrapperSettings, writePrivateFile } from "./files.ts";
 import { LoginFlows } from "./login-flows.ts";
 import { locatePi, type PiInstall } from "./pi-locate.ts";
-import { loadPiModule, PiRuntime } from "./runtime.ts";
+import { BLOCKED_SUBSCRIPTION_ENV, loadPiModule, PiRuntime } from "./runtime.ts";
 import { PageServer, type StateView } from "./server.ts";
 import { Supervisor } from "./supervisor.ts";
 
@@ -190,6 +190,8 @@ class Wrapper {
 
 async function main() {
 	const args = parseArgs(process.argv.slice(2));
+	// Not allowed outside the provider's own apps (see BLOCKED_SUBSCRIPTIONS); pi inherits this environment.
+	for (const name of BLOCKED_SUBSCRIPTION_ENV) delete process.env[name];
 
 	if (args.command === "status") {
 		const path = statusPath();

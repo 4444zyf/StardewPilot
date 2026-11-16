@@ -88,6 +88,18 @@ export const CUSTOM_APIS = ["openai-completions", "openai-responses", "anthropic
 /** The wrapper's identity in sign-in flows that ask for one. */
 const AGENT_NAME = "StardewPilot";
 
+/**
+ * Subscription sign-ins the copilot must not offer or use. Anthropic's terms allow Claude Free/Pro/Max sign-in only
+ * in Claude Code and Claude.ai; using it in another tool breaks the Consumer Terms and can get the account banned.
+ * Claude stays available with an Anthropic API key.
+ */
+export const BLOCKED_SUBSCRIPTIONS: ReadonlyMap<string, string> = new Map([
+	["anthropic", "Anthropic's terms do not allow a Claude Pro/Max subscription in other apps, and the account can be banned. Sign out of Anthropic and add an Anthropic API key instead."],
+]);
+
+/** Environment variables that carry a blocked subscription token; removed so neither the wrapper nor pi uses them. */
+export const BLOCKED_SUBSCRIPTION_ENV = ["ANTHROPIC_OAUTH_TOKEN"] as const;
+
 type PiModule = { ModelRuntime: typeof ModelRuntime };
 
 export async function loadPiModule(packageDir: string): Promise<PiModule> {
@@ -145,7 +157,7 @@ export class PiRuntime implements PilotRuntime {
 				id: p.id,
 				name: p.name,
 				apiKey: !!p.auth.apiKey?.login,
-				oauth: p.auth.oauth?.name,
+				oauth: BLOCKED_SUBSCRIPTIONS.has(p.id) ? undefined : p.auth.oauth?.name,
 				signedIn: status.configured,
 				source: status.source,
 				stored: stored.has(p.id),
@@ -169,6 +181,8 @@ export class PiRuntime implements PilotRuntime {
 	}
 
 	async login(provider: string, type: "api_key" | "oauth", interaction: Interaction): Promise<void> {
+		const blocked = type === "oauth" ? BLOCKED_SUBSCRIPTIONS.get(provider) : undefined;
+		if (blocked) throw new Error(blocked);
 		await this.rt.login(provider, type, interaction, { agentName: AGENT_NAME });
 	}
 
@@ -241,6 +255,8 @@ export class PiRuntime implements PilotRuntime {
 		const provider = this.rt.getProvider(ref.provider);
 		if (!provider) return `Unknown provider ${ref.provider}.`;
 		if (!this.rt.getModel(ref.provider, ref.id)) return `${provider.name} has no model ${ref.id}.`;
+		const blocked = BLOCKED_SUBSCRIPTIONS.get(ref.provider);
+		if (blocked && (await this.rt.listCredentials()).some((c) => c.providerId === ref.provider && c.type === "oauth")) return blocked;
 		if (!this.rt.hasConfiguredAuth(ref.provider)) {
 			const check = await this.rt.checkAuth(ref.provider).catch(() => undefined);
 			if (!check) return `Not signed in to ${provider.name}.`;

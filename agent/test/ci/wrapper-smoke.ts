@@ -86,6 +86,21 @@ try {
 	assert.ok(existsSync(auth), "pi's auth.json should be in the copilot's own pi folder");
 	log("signed in; credentials are in the copilot's pi folder");
 
+	// Claude Pro/Max sign-in is not offered (Anthropic's terms), and a stored one is refused.
+	const anthropic = (await api("providers")).providers.find((p: { id: string }) => p.id === "anthropic");
+	assert.ok(anthropic, "pi should list Anthropic");
+	assert.equal(anthropic.oauth, undefined, "the Claude subscription sign-in must be hidden");
+	assert.ok(anthropic.apiKey, "Claude must stay available with an API key");
+	await assert.rejects(api("login", { provider: "anthropic", type: "oauth" }), /400/);
+	const stored = JSON.parse(readFileSync(auth, "utf8"));
+	stored.anthropic = { type: "oauth", access: "made-up", refresh: "made-up", expires: Date.now() + 3_600_000 };
+	writeFileSync(auth, JSON.stringify(stored));
+	const claude = (await api("models")).models.find((m: { provider: string }) => m.provider === "anthropic");
+	assert.ok(claude, "a stored Claude credential should make Anthropic models visible");
+	await assert.rejects(api("settings", { model: `anthropic/${claude.id}` }), /Anthropic's terms/);
+	await api("logout", { provider: "anthropic" });
+	log("Claude subscription sign-in is hidden and a stored one is refused");
+
 	// Choose a model; the wrapper starts pi.
 	await api("settings", { model: "qwen-token-plan-cn/qwen3.8-flash" });
 	const running = await until("pi to run", () => (readStatus()?.state === "running" && readStatus()?.piPid ? readStatus() : undefined), 60_000);

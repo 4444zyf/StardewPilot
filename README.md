@@ -18,7 +18,7 @@ Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (p
 - Stardew Valley 1.6 on PC, with SMAPI 4.5+
 - .NET 6 SDK or newer (to build the mod)
 - Node.js 22.19+ and [pi](https://github.com/earendil-works/pi) 1.5+
-- An AI model: a subscription (ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot and others), an API key, or a local model. You set this up on the copilot settings page; no terminal needed.
+- An AI model: a subscription (ChatGPT Plus/Pro, GitHub Copilot and others), an API key, or a local model. You set this up on the copilot settings page; no terminal needed. Claude works with an Anthropic API key only: Anthropic's terms do not allow a Claude Pro/Max subscription in other apps, so the copilot does not offer that sign-in.
 
 **Systems.** Played and tested on Linux. **Windows: automated tests pass; not yet played by a person.** If you try it on Windows, please fill in the [Windows test report](https://github.com/4444zyf/StardewPilot/issues/new?template=windows-test.yml). macOS should work but is untested.
 

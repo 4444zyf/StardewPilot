@@ -17,7 +17,7 @@ The design rule from the main design still holds: **the mod never handles creden
 
 ## Why a browser page, not an in-game menu
 
-- Sign-in to subscriptions (ChatGPT, Claude, GitHub Copilot) is OAuth in a browser anyway; the page is already where the player is.
+- Sign-in to subscriptions (ChatGPT, GitHub Copilot) is OAuth in a browser anyway; the page is already where the player is.
 - Pasting a long key into a Stardew text box is awkward; a browser handles paste, password managers and IMEs.
 - The page works before the game is started (`stardewpilot-agent setup`) and when the agent is not running at all, which is exactly when the player needs it.
 
@@ -25,7 +25,7 @@ The design rule from the main design still holds: **the mod never handles creden
 
 - pi's `ModelRuntime` (exported by `@earendil-works/pi-coding-agent`) exposes `getProviders()`, `getProviderAuthStatus(id)`, `checkAuth(id)`, `getAvailable(id)`, `listCredentials()`, `login(id, "api_key" | "oauth", interaction)` and `logout(id)`.
 - `login` drives any provider's flow through two callbacks: `prompt()` (types `text`, `secret`, `select`, `manual_code`) and `notify()` (events `info`, `auth_url`, `device_code`, `progress`). A web form can render all of them. Checked with a throwaway auth file: Qwen Token Plan CN asks for one secret; Cloudflare asks for a secret and an account ID.
-- 43 built-in providers. Subscription sign-ins include **OpenAI Codex (ChatGPT Plus/Pro)**, Anthropic (Claude Pro/Max), GitHub Copilot, xAI, Kimi, OpenRouter. This settles the design's open question: a ChatGPT subscription is supported, as provider `openai-codex`. A real sign-in by the owner is still needed to confirm it end to end.
+- 43 built-in providers. Subscription sign-ins include **OpenAI Codex (ChatGPT Plus/Pro)**, Anthropic (Claude Pro/Max; removed, see below), GitHub Copilot, xAI, Kimi, OpenRouter. This settles the design's open question: a ChatGPT subscription is supported, as provider `openai-codex`. A real sign-in by the owner is still needed to confirm it end to end.
 - Qwen Token Plan CN is a built-in provider (`qwen-token-plan-cn`), so our test setup no longer needs a hand-written `models.json` entry.
 - `PI_CODING_AGENT_DIR` moves pi's whole config folder (auth, models, settings, sessions).
 
@@ -64,7 +64,7 @@ Layout, top to bottom:
 
 1. **Status bar.** State badge, the model in use, a Restart button, and pi's last error if any.
 2. **Sign in.** Three groups:
-   - *Subscriptions*: one button per OAuth provider (ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, ...).
+   - *Subscriptions*: one button per OAuth provider (ChatGPT Plus/Pro, GitHub Copilot, ...). Claude Pro/Max is left out on purpose: since 2026-02-19 Anthropic's Consumer Terms say Free/Pro/Max sign-in may be used only in Claude Code and Claude.ai, and other tools may not offer it. The wrapper hides the button, refuses that sign-in, will not start pi with a stored Claude subscription credential (the player is told to sign out and add an API key), and drops `ANTHROPIC_OAUTH_TOKEN` from the environment. Claude remains available with an Anthropic API key.
    - *API key*: a searchable provider list with an "Add key" button.
    - *Custom or local endpoint*: name, base URL, API type (OpenAI-compatible by default), optional key, model IDs. For Ollama, llama.cpp, or any compatible service. Written to the pi folder's `models.json`; the key, if any, goes to `auth.json` like any other.
    - Below the groups: providers that are signed in, with where the sign-in comes from (stored, environment variable) and a Sign out button for stored ones.
