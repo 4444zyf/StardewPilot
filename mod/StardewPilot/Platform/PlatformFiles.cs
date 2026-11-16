@@ -53,13 +53,15 @@ internal sealed record WrapperStatusInfo(string State, string Message, string Mo
 {
     public static readonly WrapperStatusInfo None = new("none", "", "", "", 0, null);
 
-    /// <summary>Open for reading so that other processes may still write, rename over or delete the file.</summary>
+    /// <summary>
+    /// Open for reading while letting other processes write or delete the file. Windows still refuses a rename over
+    /// a file that is open (checked in CI), so callers keep it open only for the read; the wrapper retries its rename.
+    /// </summary>
     public static FileStream OpenShared(string path) =>
         new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
     /// <summary>
-    /// Read the status file. It is opened so that the wrapper can replace it while we read: Windows refuses to rename
-    /// over a file that another process has open unless that process allowed deletion.
+    /// Read the status file, holding it open only for the read so the wrapper's replace (with retries) gets through.
     /// Returns null when the file is missing or half-written.
     /// </summary>
     public static WrapperStatusInfo? Read(string path)

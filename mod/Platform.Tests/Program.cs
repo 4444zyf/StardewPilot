@@ -71,18 +71,39 @@ Test("status file: missing, valid, half-written", () =>
     Check(WrapperStatusInfo.Read(path) == null, "half-written file should read as null");
 });
 
-Test("status file: the wrapper can replace it while the mod has it open", () =>
+TestAsync("status file: the wrapper's replace succeeds around the mod's brief reads", async () =>
 {
+    // On Windows a rename over a file that is open fails, even when the reader allowed deletion (seen in CI).
+    // So the mod only holds the file for the moment it reads it, and the wrapper retries the rename
+    // (files.ts writePrivateFile: up to 20 tries, 25 ms apart). This test does both at once.
     string dir = Temp("replace");
     string path = Path.Combine(dir, "agent-status.json");
     File.WriteAllText(path, "{\"state\":\"starting\"}");
-    using (FileStream held = WrapperStatusInfo.OpenShared(path))
+
+    Task reader = Task.Run(async () =>
     {
-        // What the wrapper does (files.ts writePrivateFile): write a temp file, then rename it over the real one.
-        string tmp = path + ".123.tmp";
-        File.WriteAllText(tmp, "{\"state\":\"running\"}");
-        File.Move(tmp, path, overwrite: true);
+        using (WrapperStatusInfo.OpenShared(path))
+            await Task.Delay(150); // longer than any real read, shorter than the wrapper's retry window
+    });
+    await Task.Delay(20); // let the reader open first
+
+    string tmp = path + ".123.tmp";
+    File.WriteAllText(tmp, "{\"state\":\"running\"}");
+    int attempts = 0;
+    for (; ; attempts++)
+    {
+        try
+        {
+            File.Move(tmp, path, overwrite: true);
+            break;
+        }
+        catch (Exception ex) when ((ex is IOException || ex is UnauthorizedAccessException) && attempts < 20)
+        {
+            await Task.Delay(25);
+        }
     }
+    await reader;
+    Console.WriteLine($"      replaced after {attempts} retries");
     Check(WrapperStatusInfo.Read(path)!.State == "running", "replacement not visible");
 });
 
