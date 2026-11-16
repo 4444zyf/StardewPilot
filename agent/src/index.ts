@@ -36,7 +36,7 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 	let currentCtx: ExtensionContext | undefined;
 	let settings: BridgeSettings = {};
 	let running = false;
-	let runKind: "reply" | "tip" = "reply";
+	let runKind: "reply" | "tip" | "briefing" = "reply";
 	const queuedTips: TipTrigger[] = [];
 	const readOnly = new Set<string>();
 	let failedActions = 0;
@@ -359,6 +359,9 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		currentCtx = ctx;
+		// The day's first run, started by the seed with the morning briefing: its answer is the briefing.
+		const custom = event as { messageType?: string; message?: { customType?: string } };
+		if (custom.messageType === "custom" && custom.message?.customType === BRIEFING_MESSAGE) runKind = "briefing";
 		const c = await ensureConnected();
 		lockDownTools();
 		return {
@@ -385,12 +388,14 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 			}
 			const content = daySeedMessage(seed);
 			const play = seed.selfPlay?.enabled === true;
+			// With a briefing due and no self-play, the seed starts a turn whose answer is the morning briefing.
+			const briefing = !play && !!seed.briefing;
 			// Everything used inside withSession is plain data: the old extension instance is gone by then.
 			await ctx.newSession({
 				withSession: async (fresh) => {
 					await fresh.sendMessage(
-						{ customType: "stardew-day", content, display: true },
-						play ? { triggerTurn: true } : { deliverAs: "nextTurn" },
+						{ customType: briefing ? BRIEFING_MESSAGE : "stardew-day", content, display: true },
+						play || briefing ? { triggerTurn: true } : { deliverAs: "nextTurn" },
 					);
 				},
 			});
@@ -450,6 +455,9 @@ export function actionFailed(result: { content: Array<{ text: string }>; isError
 	}
 }
 
+/** customType of the day seed that asks for the morning briefing. */
+export const BRIEFING_MESSAGE = "stardew-day-briefing";
+
 interface MemorySeed {
 	date?: string;
 	goal?: string | null;
@@ -457,6 +465,7 @@ interface MemorySeed {
 	todayPlan?: string | null;
 	recentDays?: Array<{ date: string; summary: string }>;
 	selfPlay?: { enabled?: boolean; requestBudget?: number | null };
+	briefing?: { facts?: unknown; fallback?: string; gameLanguage?: string } | null;
 }
 
 /** The first message of each day's session: what the agent remembers, and what to do now. */
@@ -468,8 +477,20 @@ export function daySeedMessage(seed: MemorySeed): string {
 	else parts.push("No earlier days recorded.");
 	if (seed.todayPlan) parts.push(`Today's plan so far:\n${seed.todayPlan}`);
 	if (seed.selfPlay?.enabled) {
+		if (seed.briefing) parts.push(`Today's facts (use them to plan; do not write them out for the player): ${JSON.stringify(seed.briefing.facts ?? {})}`);
 		parts.push(
 			"Self-play is on. Check get_status and get_crops, write today's plan with write_day_plan (short, ordered, toward the goal), then start on the first task with the action tools. In the evening call write_day_summary, then go_to_bed.",
+		);
+	} else if (seed.briefing) {
+		const language = seed.briefing.gameLanguage ?? "en";
+		parts.push(
+			[
+				"[Morning briefing]",
+				`Facts: ${JSON.stringify(seed.briefing.facts ?? {})}`,
+				`Default wording, one point per line:\n${seed.briefing.fallback ?? ""}`,
+				`Rewrite the default wording as a short, friendly morning briefing in the game's language (${language}): keep every point, at most five lines, most important first (birthdays, a festival, last chances and quests ending before weather), plain text, no heading, no question back.`,
+				"Answer from these facts only: do not call tools and do not add facts or advice of your own. Computed parts (gift ideas, last chances) are estimates: word them that way. Then wait for the player's questions or commands.",
+			].join("\n"),
 		);
 	} else {
 		parts.push("Self-play is off: wait for the player's questions or commands.");

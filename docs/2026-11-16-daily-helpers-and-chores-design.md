@@ -101,7 +101,7 @@ One message at the start of the day instead of several separate tips.
 
 - **Facts gathered by the mod** in one new tool, `get_day_briefing`. Lines with nothing to report are left out:
   - weather today, and tomorrow's forecast;
-  - luck, as one of five levels (see below);
+  - luck, as one of the TV fortune teller's levels (see below);
   - birthdays today, each with the best gift idea the player owns;
   - a festival today;
   - crops ready to harvest, crops that die tomorrow because the season ends, and machines with output ready;
@@ -109,12 +109,13 @@ One message at the start of the day instead of several separate tips.
   - quests that run out today or tomorrow, and a finished tool upgrade waiting at the blacksmith;
   - bundle items that can be got for at most three more days this season;
   - yesterday: the value shipped and the money change, from the end-of-day record.
-- **Luck:** the TV's own fortune function cannot be used: it draws random numbers and picks between two wordings. We apply the TV's thresholds to the day's luck value and report the level. Computed.
+- **Luck:** the TV's own fortune function cannot be used: it draws random numbers and picks between two wordings. We apply the TV's thresholds to the day's luck value and report its level (very bad, bad, slightly bad, neutral, good, very good, the best). Computed.
 - **Cart:**
   - "In the forest today" is asked of the game's own check, not worked out from the weekday. The Night Market and Desert Festival carts are not covered.
   - The game builds a shop's stock from a random generator seeded by the save and the day, and takes off what was already bought. So the morning's answer should be what the player sees. This is checked when building by asking twice on a cart day and comparing with the cart's menu, because a shop entry's own conditions could still be random.
 - **Delivery:** the agent starts a fresh session at the start of every game day and seeds it from memory. The briefing facts travel in that seed message, and the seed asks for the briefing as its first reply. A separate tip at 6:10am would race the session change and could be lost.
-- **Wording:** its own instruction: at most five short lines, most important first. The two-sentence limit of ordinary tips does not apply.
+- **Wording:** the model rewrites the mod's own text, one point per line: every point kept, at most five lines, birthdays, festival and last chances first. It answers from the facts only and calls no tools; in an early test it looked up gift ideas itself and suggested a taste the player had not discovered. The two-sentence limit of ordinary tips does not apply.
+- **Birthdays without a known gift:** the facts say that no owned gift has a taste the player has discovered, so the model does not wrongly say the player owns nothing the villager likes.
 - **No agent:** if no agent is connected, the mod shows its own fixed-text list.
 - **Once per day:** loading a save again on the same game day does not repeat it.
 - **Day 1 and festival days:** on the first day of a new save it shows as on any other day; most lines are empty. On a festival day the festival is the first line.
@@ -221,8 +222,8 @@ Each can be set as a goal by itself.
 | D3 | `get_gift_ideas` | For two villagers the game reacts to the gift as the tool said; the game accepts or refuses in the three gift-limit cases as the tool said; an item a bundle needs once is held back once, not entirely | Done 2026-11-16. Gus (loves Orange, birthday, 2 gifts that week): tool said 1 left, game took it, +640 points. Lewis (likes Orange): tool said 1, game took it, +45. Pierre after 2 gifts that week: tool said 0, game refused. Pam: 2 of 5 Parsnips spare (1 normal for Spring Crops, 2 gold kept for Quality Crops); Daffodil 6 of 7 |
 | D4 | `get_bundle_plan` | For one crop, one fish and one shop item the source and "available until" match the game data; an all-year item has no date; another kind of item says the source is not read; a Joja save returns the reason | Done 2026-11-16. Melon: Pierre 80g, 12 days, last planting day summer 16; Sunfish: town and forest in spring and summer, until summer 28 (matches get_fish_info); Hay and Wood: today's stock at Marnie's and Robin's; Catfish and Spring Crops in summer say "not this season"; Copper Bar and forage say the source is not read; a Joja save returns the reason. Fishing junk (Wood, Stone) is not counted as fish; fish seasons use the reached places when there are any; the Missing Bundle is left out |
 | D5 | End-of-day record on every day | A day played by hand leaves a summary with the right money and shipping-bin value | Done 2026-11-16. Summer 8 played by hand (100g received, 3 Parsnips in the bin, slept): the record says +100g before shipping, 105g in the bin (the game's shipping screen also showed 105g) and no autopilot jobs. Mini shipping bins are counted too |
-| D6 | Morning briefing | Shows once on a normal day, a birthday, a festival day and a cart day, and not again after reloading the save; cart lines match the cart's menu and two calls agree; the setting switches it off; with no agent the fixed text shows |  |
-| D7 | Guide prompt and spoiler rule | Five guide questions answered correctly in the game; a briefing on a save with an undiscovered taste does not use it |  |
+| D6 | Morning briefing | Shows once on a normal day, a birthday, a festival day and a cart day, and not again after reloading the save; cart lines match the cart's menu and two calls agree; the setting switches it off; with no agent the fixed text shows | Done 2026-11-16. Normal day (summer 9), Maru's birthday (summer 10), the Luau (summer 11, festival first) and a cart day (summer 12) each showed one briefing; reloading summer 9 did not repeat it. Cart lines (Pomegranate 900g, Bream 800g, Maki Roll 1100g) match the cart's own menu, and two calls agree. With the copilot stopped, the fixed text showed at once; with MorningBriefing off, nothing showed |
+| D7 | Guide prompt and spoiler rule | Five guide questions answered correctly in the game; a briefing on a save with an undiscovered taste does not use it | Done 2026-11-16. Five questions answered correctly in the game: where the copper ore is (42: farm chest 30, house chest 12), gifts for Maru (Cauliflower loved, marked as not discovered, one held back for a bundle), the Summer Crops plan (last planting days and Pierre's prices), today's priorities, and fetching 2 eggs from the fridge (it freed a backpack slot first after the new "backpack is full" message). On Maru's birthday the briefing did not suggest the undiscovered Cauliflower |
 | C1 | `get_animals` | Matches the animals' own menus and the buildings on the test save; the hay count matches the silo |  |
 | C2 | `tend_animals` | All animals petted (inside and outside), produce collected, feeding spots filled; missing tool and no hay are reported; it refuses after 7pm; a held Golden Animal Cracker is not used up |  |
 | C3 | `tend_machines` | Ready output collected; kegs refilled with a named item; a furnace without coal and an item the machine refuses are both reported before walking |  |

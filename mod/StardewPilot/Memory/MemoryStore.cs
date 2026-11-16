@@ -94,6 +94,30 @@ internal sealed class MemoryStore
         return int.Parse(m.Groups[1].Value) * 1000 + season * 100 + int.Parse(m.Groups[3].Value);
     }
 
+    // ------------------------------------------------------------ morning briefing record (written at once)
+
+    private string BriefingPath => Path.Combine(this.FarmFolder, "briefing-shown.txt");
+
+    /// <summary>
+    /// Whether today's morning briefing was already shown. Kept apart from the day's pending memory on purpose:
+    /// reloading the save on the same game day must not show it again.
+    /// </summary>
+    public bool BriefingShownToday() =>
+        File.Exists(this.BriefingPath) && File.ReadAllText(this.BriefingPath).Trim() == DateKey();
+
+    public void MarkBriefingShown()
+    {
+        try
+        {
+            Directory.CreateDirectory(this.FarmFolder);
+            File.WriteAllText(this.BriefingPath, DateKey() + "\n");
+        }
+        catch (Exception ex)
+        {
+            this.monitor.Log($"Could not record the morning briefing: {ex.Message}", LogLevel.Warn);
+        }
+    }
+
     // ------------------------------------------------------------ writing (pending until saved)
 
     public void WriteNotes(string text) => this.pending[this.NotesPath] = text.Trim() + "\n";

@@ -33,6 +33,11 @@ public sealed class ModEntry : Mod
     private readonly Queue<(TipTrigger tip, double deadline)> pendingTips = new();
     private const double TipWaitSeconds = 45;
 
+    /// <summary>Today's morning briefing is waiting for the agent's wording, until this game-time second.</summary>
+    private bool briefingDue;
+    private double briefingDeadline;
+    private const double BriefingWaitSeconds = 90;
+
     public override void Entry(IModHelper helper)
     {
         this.config = helper.ReadConfig<ModConfig>();
@@ -58,6 +63,7 @@ public sealed class ModEntry : Mod
         ActionTools.Register(this.tools, this.runner, new Macros(() => this.config, helper));
         this.memory = new MemoryStore(helper.DirectoryPath, this.Monitor);
         MemoryTools.Register(this.tools, this.memory, this.selfPlay, () => this.config, (on, goal) => this.SetSelfPlay(on, goal));
+        this.tools.Add(DayBriefing.Tool(this.memory, () => this.config));
         this.runner.Finished += (name, result) =>
         {
             this.selfPlay.LogJob(name, result);
@@ -101,6 +107,7 @@ public sealed class ModEntry : Mod
             this.tips.OnDayStarted();
             Navigation.ResetBlockedExits();
             this.selfPlay.OnDayStarted();
+            this.PrepareBriefing();
             this.Notify("day_started", new { season = Game1.currentSeason, day = Game1.dayOfMonth, year = Game1.year, selfPlay = this.selfPlay.Enabled });
         };
         helper.Events.GameLoop.TimeChanged += (_, e) =>
@@ -121,6 +128,7 @@ public sealed class ModEntry : Mod
             this.selfPlay.Stop("The game returned to the title screen.");
             ChatLog.Clear();
             this.pendingTips.Clear();
+            this.briefingDue = false;
             this.Notify("returned_to_title");
         };
         helper.Events.Player.InventoryChanged += (_, e) => this.tips.OnInventoryChanged(e);
@@ -163,8 +171,7 @@ public sealed class ModEntry : Mod
                 return new { };
             }));
             this.bridge.Register("selfplay/next", (_, _) => MainThread.Run<object?>(this.SelfPlayNext));
-            this.bridge.Register("memory/seed", (_, _) => MainThread.Run<object?>(() =>
-                Context.IsWorldReady ? MemoryTools.Snapshot(this.memory!, this.selfPlay, this.config) : new { }));
+            this.bridge.Register("memory/seed", (_, _) => MainThread.Run<object?>(() => Context.IsWorldReady ? this.DaySeed() : new { }));
             this.bridge.Register("agent/status", (p, _) =>
             {
                 AgentState.SetBusy(p?.Value<bool?>("busy") ?? false, p?.Value<string>("activity"));
@@ -206,6 +213,8 @@ public sealed class ModEntry : Mod
             {
                 this.tips!.OnUpdate();
                 this.FlushOverdueTips();
+                if (this.briefingDue && Game1.currentGameTime.TotalGameTime.TotalSeconds > this.briefingDeadline)
+                    this.ShowBriefingFallback();
             }
         }
 
@@ -316,7 +325,17 @@ public sealed class ModEntry : Mod
         if (string.IsNullOrWhiteSpace(text))
             return;
         text = PlainText(text);
-        if (kind == "tip")
+        if (kind == "briefing")
+        {
+            this.Monitor.Log($"Morning briefing from the agent: {text}", LogLevel.Debug);
+            if (this.briefingDue)
+            {
+                this.briefingDue = false;
+                this.memory?.MarkBriefingShown();
+            }
+            ChatLog.Add(ChatSender.Tip, text);
+        }
+        else if (kind == "tip")
         {
             if (this.pendingTips.Count > 0)
                 this.pendingTips.Dequeue();
@@ -373,6 +392,61 @@ public sealed class ModEntry : Mod
         ChatLog.Add(ChatSender.Warning, text);
         Game1.playSound("cancel");
         this.bridge?.Broadcast("tips/warning", new { kind, text });
+    }
+
+    /// <summary>At day start: decide whether today's briefing is due, and show the fixed text at once if no agent can word it.</summary>
+    private void PrepareBriefing()
+    {
+        this.briefingDue = false;
+        if (this.memory == null || !TipEngine.BriefingOn(this.config) || this.memory.BriefingShownToday())
+            return;
+        if (!AgentState.Connected)
+        {
+            this.ShowBriefingFallback();
+            return;
+        }
+        // The agent starts a fresh session for the new day and asks for the day's seed; the briefing travels with it.
+        this.briefingDue = true;
+        this.briefingDeadline = Game1.currentGameTime.TotalGameTime.TotalSeconds + BriefingWaitSeconds;
+    }
+
+    /// <summary>The briefing as the mod's own fixed text, when no agent words it in time.</summary>
+    private void ShowBriefingFallback()
+    {
+        this.briefingDue = false;
+        if (this.memory == null || !Context.IsWorldReady)
+            return;
+        var (_, lines) = DayBriefing.Build(this.memory, this.config);
+        this.memory.MarkBriefingShown();
+        this.Monitor.Log($"Morning briefing shown as fixed text: {string.Join(" | ", lines)}", LogLevel.Debug);
+        ChatLog.Add(ChatSender.Tip, "Good morning! " + string.Join("\n", lines));
+    }
+
+    /// <summary>The first message of the agent's day session: memory, and today's briefing when it is due.</summary>
+    private object DaySeed()
+    {
+        JObject seed = JObject.FromObject(MemoryTools.Snapshot(this.memory!, this.selfPlay, this.config));
+        if (this.briefingDue)
+        {
+            var (facts, lines) = DayBriefing.Build(this.memory!, this.config);
+            seed["briefing"] = JObject.FromObject(new
+            {
+                facts,
+                fallback = string.Join("\n", lines),
+                gameLanguage = LocalizedContentManager.CurrentLanguageCode.ToString(),
+            });
+            // In self-play the agent plans the day from these facts instead of writing a chat message.
+            if (this.selfPlay.Enabled)
+            {
+                this.briefingDue = false;
+                this.memory!.MarkBriefingShown();
+            }
+            else
+            {
+                this.briefingDeadline = Game1.currentGameTime.TotalGameTime.TotalSeconds + BriefingWaitSeconds;
+            }
+        }
+        return seed;
     }
 
     /// <summary>Start or stop self-play, from the hotkey or the agent.</summary>

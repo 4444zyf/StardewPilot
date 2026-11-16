@@ -18,6 +18,12 @@ public sealed class ModConfig
     /// <summary>How often the copilot speaks up on its own: Off, Important, or Talkative.</summary>
     public Chattiness Chattiness { get; set; } = Chattiness.Important;
 
+    /// <summary>
+    /// A short briefing at the start of each game day (weather, luck, birthdays, what is ready, last chances).
+    /// Off when Chattiness is Off. Costs one model request per game day when the copilot is connected.
+    /// </summary>
+    public bool MorningBriefing { get; set; } = true;
+
     /// <summary>Most proactive tips per game day. Warnings do not count.</summary>
     public int MaxTipsPerDay { get; set; } = 6;
 

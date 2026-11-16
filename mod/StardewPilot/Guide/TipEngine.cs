@@ -55,8 +55,8 @@ internal sealed class TipEngine
             return;
         Farmer p = Game1.player;
 
-        // Morning: birthdays and festivals today.
-        if (time >= 610)
+        // Morning: birthdays and festivals today. The morning briefing carries these when it is on.
+        if (time >= 610 && !BriefingOn(this.config()))
         {
             foreach (NPC npc in BirthdaysOn(Game1.dayOfMonth))
             {
@@ -137,6 +137,9 @@ internal sealed class TipEngine
                 this.Warn($"sold:{KeyOf(item)}", $"You just sold {item.DisplayName}, which the {bundle} still needs. You can buy it back from this shop before you leave.");
         }
     }
+
+    /// <summary>Whether the morning briefing replaces the separate morning tips.</summary>
+    public static bool BriefingOn(ModConfig cfg) => cfg.MorningBriefing && cfg.Chattiness != Chattiness.Off;
 
     private void Tip(string key, bool important, string fallback, object facts)
     {

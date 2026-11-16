@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { actionFailed, createStardewPilot, MAX_FAILED_ACTIONS, tipPrompt } from "../src/index.ts";
+import { actionFailed, BRIEFING_MESSAGE, createStardewPilot, daySeedMessage, MAX_FAILED_ACTIONS, tipPrompt } from "../src/index.ts";
 import { ReplayTransport } from "./fake-transport.ts";
 
 /** Minimal stand-in for pi's ExtensionAPI: records what the extension registers. */
@@ -188,4 +188,35 @@ test("after the first try and two re-plans fail, further actions are blocked", a
 	assert.equal(await pi.fire("tool_call", { toolName: "write_notes", input: {} }), undefined);
 	await pi.fire("agent_start");
 	assert.equal(await pi.fire("tool_call", { toolName: "water_crops", input: {} }), undefined);
+});
+
+test("the day seed asks for the morning briefing, in the game's language", () => {
+	const text = daySeedMessage({ date: "Y1-summer-09", briefing: { facts: { luck: "good" }, fallback: "Weather: sunny.", gameLanguage: "zh" } });
+	assert.match(text, /\[Morning briefing\]/);
+	assert.match(text, /"luck":"good"/);
+	assert.match(text, /\(zh\)/);
+	assert.match(text, /at most five lines/);
+	assert.match(text, /do not call tools/);
+	assert.doesNotMatch(text, /Self-play is off/);
+});
+
+test("in self-play the briefing facts are for planning, not a chat message", () => {
+	const text = daySeedMessage({ date: "Y1-summer-09", selfPlay: { enabled: true }, briefing: { facts: { luck: "bad" } } });
+	assert.match(text, /use them to plan/);
+	assert.doesNotMatch(text, /\[Morning briefing\]/);
+});
+
+test("the answer to the briefing seed goes to the game as a briefing", async () => {
+	const { pi, sentToGame } = await connected();
+	await pi.fire("before_agent_start", { messageType: "custom", message: { customType: BRIEFING_MESSAGE } });
+	await pi.fire("agent_start");
+	await pi.fire("message_end", { message: { role: "assistant", content: [{ type: "text", text: "Sunny, good luck." }] } });
+	await pi.fire("agent_settled", { aborted: false });
+	// The next run is an ordinary reply again.
+	await pi.fire("before_agent_start", { messageType: "user", prompt: "hi" });
+	await pi.fire("agent_start");
+	await pi.fire("message_end", { message: { role: "assistant", content: [{ type: "text", text: "Hello." }] } });
+	await pi.fire("agent_settled", { aborted: false });
+	const sent = sentToGame().filter((m) => m.method === "chat/agent_message").map((m) => m.params);
+	assert.deepEqual(sent, [{ text: "Sunny, good luck.", kind: "briefing" }, { text: "Hello.", kind: "reply" }]);
 });

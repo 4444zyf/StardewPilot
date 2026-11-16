@@ -169,8 +169,8 @@ internal static class ActionTools
         registry.Add(new ToolDef
         {
             Name = "get_shop_stock",
-            Description = "What a shop sells today and at what price (does not need the shop to be open). Shops: SeedShop (Pierre), Joja, FishShop (Willy), Blacksmith (Clint), AnimalShop (Marnie), Saloon (Gus), Carpenter (Robin), Hospital.",
-            InputSchema = Schema.Object(("shop", Schema.Enum("Shop id.", Macros.ShopLocations.Keys.ToArray()), true)),
+            Description = "What a shop sells today and at what price (does not need the shop to be open). Shops: SeedShop (Pierre), Joja, FishShop (Willy), Blacksmith (Clint), AnimalShop (Marnie), Saloon (Gus), Carpenter (Robin), Hospital, Traveler (the Traveling Cart; check travelingCartHereToday).",
+            InputSchema = Schema.Object(("shop", Schema.Enum("Shop id.", Macros.ShopLocations.Keys.Append("Traveler").ToArray()), true)),
             Handler = a =>
             {
                 string shop = a.Str("shop") ?? "SeedShop";
@@ -178,7 +178,8 @@ internal static class ActionTools
                 return new
                 {
                     shop,
-                    location = Macros.ShopLocations.GetValueOrDefault(shop),
+                    location = shop == "Traveler" ? "Forest" : Macros.ShopLocations.GetValueOrDefault(shop),
+                    travelingCartHereToday = shop == "Traveler" ? (Game1.getLocationFromName("Forest") as StardewValley.Locations.Forest)?.ShouldTravelingMerchantVisitToday() : null,
                     items = stock.Select(p => new
                     {
                         name = p.Key.DisplayName,
