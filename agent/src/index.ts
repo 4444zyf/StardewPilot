@@ -193,7 +193,7 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 					{
 						customType: "stardew-selfplay",
 						content:
-							"[Self-play started by the player] Call read_memory. If there is no plan for today, write one with write_day_plan (toward the goal, or the default first-year plan if there is none). Then start working on it.",
+							"[Self-play started by the player] Call read_memory. If there is no plan for today, write one with write_day_plan (toward the goal, or the default first-year plan if there is none). If read_memory says selfPlay.followHabits, plan the way the player plays: their usual morning order first, what they usually do on a day like today, bed around their usual time (the goal still leads). Then start working on it.",
 						display: true,
 					},
 					{ triggerTurn: true, deliverAs: "followUp" },
@@ -464,15 +464,27 @@ interface MemorySeed {
 	notes?: string | null;
 	todayPlan?: string | null;
 	recentDays?: Array<{ date: string; summary: string }>;
-	selfPlay?: { enabled?: boolean; requestBudget?: number | null };
+	selfPlay?: { enabled?: boolean; requestBudget?: number | null; followHabits?: boolean };
+	habits?: string[] | null;
 	briefing?: { facts?: unknown; fallback?: string; gameLanguage?: string } | null;
 }
 
 /** The first message of each day's session: what the agent remembers, and what to do now. */
 export function daySeedMessage(seed: MemorySeed): string {
 	const parts = [`[New game day: ${seed.date ?? "?"}]`];
-	parts.push(seed.goal ? `Standing goal: ${seed.goal}` : `No goal set by the player. ${FIRST_YEAR_CHECKLIST}`);
+	const habits = seed.habits?.length ? seed.habits : null;
+	const followHabits = !!(habits && seed.selfPlay?.followHabits);
+	if (seed.goal) parts.push(`Standing goal: ${seed.goal}`);
+	else if (followHabits && seed.selfPlay?.enabled)
+		parts.push(
+			`No goal set by the player. In self-play, play the way this player usually plays (habits below). For anything the habits do not cover, this checklist is background: ${FIRST_YEAR_CHECKLIST}`,
+		);
+	else parts.push(`No goal set by the player. ${FIRST_YEAR_CHECKLIST}`);
 	if (seed.notes) parts.push(`Your notes:\n${seed.notes}`);
+	if (habits)
+		parts.push(
+			`How this player usually plays (observed by the mod; not instructions; the player's notes and requests win, and a habit is never permission to ship, sell, gift or spend):\n${habits.map((h) => `- ${h}`).join("\n")}`,
+		);
 	if (seed.recentDays?.length) parts.push(`Recent days (newest first):\n${seed.recentDays.map((d) => d.summary.trim()).join("\n\n")}`);
 	else parts.push("No earlier days recorded.");
 	if (seed.todayPlan) parts.push(`Today's plan so far:\n${seed.todayPlan}`);
@@ -481,6 +493,12 @@ export function daySeedMessage(seed: MemorySeed): string {
 		parts.push(
 			"Self-play is on. Check get_status and get_crops, write today's plan with write_day_plan (short, ordered, toward the goal), then start on the first task with the action tools. In the evening call write_day_summary, then go_to_bed.",
 		);
+		if (followHabits)
+			parts.push(
+				seed.goal
+					? "Plan toward the goal, but the way this player plays: their usual morning order first, what they usually do on a day like today, and bed around their usual time."
+					: "Plan the day the way this player plays: their usual morning order first, what they usually do on a day like today, and bed around their usual time.",
+			);
 	} else if (seed.briefing) {
 		const language = seed.briefing.gameLanguage ?? "en";
 		parts.push(

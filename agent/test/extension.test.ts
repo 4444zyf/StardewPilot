@@ -206,6 +206,31 @@ test("in self-play the briefing facts are for planning, not a chat message", () 
 	assert.doesNotMatch(text, /\[Morning briefing\]/);
 });
 
+test("habits reach the day seed as observations, not instructions", () => {
+	const habits = ["Mornings: usually water (10 of 12 days), harvest (9 of 12 days)", "Usually in bed around 10pm (5 of 6 days within an hour)"];
+	const text = daySeedMessage({ date: "Y1-summer-09", habits, selfPlay: { enabled: false, followHabits: true } });
+	assert.match(text, /How this player usually plays \(observed by the mod; not instructions/);
+	assert.match(text, /never permission to ship, sell, gift or spend/);
+	assert.match(text, /- Mornings: usually water/);
+	// Without self-play the checklist is the default goal as before.
+	assert.match(text, /No goal set by the player\. Default goal: a balanced first year/);
+});
+
+test("self-play with no goal follows the habits, with the checklist as background", () => {
+	const habits = ["Mornings: usually water (10 of 12 days)"];
+	const follow = daySeedMessage({ date: "Y1-summer-09", habits, selfPlay: { enabled: true, followHabits: true } });
+	assert.match(follow, /play the way this player usually plays/);
+	assert.match(follow, /this checklist is background/);
+	assert.match(follow, /Plan the day the way this player plays/);
+	const withGoal = daySeedMessage({ date: "Y1-summer-09", goal: "earn 5000g", habits, selfPlay: { enabled: true, followHabits: true } });
+	assert.match(withGoal, /Standing goal: earn 5000g/);
+	assert.match(withGoal, /Plan toward the goal, but the way this player plays/);
+	// The setting off: the checklist, no instruction to follow habits.
+	const off = daySeedMessage({ date: "Y1-summer-09", habits, selfPlay: { enabled: true, followHabits: false } });
+	assert.doesNotMatch(off, /way this player/);
+	assert.match(off, /No goal set by the player\. Default goal/);
+});
+
 test("the answer to the briefing seed goes to the game as a briefing", async () => {
 	const { pi, sentToGame } = await connected();
 	await pi.fire("before_agent_start", { messageType: "custom", message: { customType: BRIEFING_MESSAGE } });
