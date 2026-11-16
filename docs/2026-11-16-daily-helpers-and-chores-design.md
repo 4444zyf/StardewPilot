@@ -144,6 +144,7 @@ Part 2 acts in the game, so the existing autopilot rules apply unchanged: jobs a
 - **Each animal:** kind, name, building, whether it is inside or out on the farm, age, hearts, whether it was petted today, and whether it has produce ready and which tool that needs. Raw.
 - **Each building:** door open or closed, feeding spots filled and empty, and whether it feeds by itself.
 - **Hay:** the farm keeps one shared hay count; it is not stored per hopper. The tool reports that count and the silo capacity.
+- **Pets:** the cat or dog is listed too (name, hearts, petted today), as the game's own animal page lists it.
 
 ### `tend_animals`
 
@@ -152,15 +153,18 @@ One job per building, or all buildings:
 1. Pet every animal not petted today, inside the building or out on the farm.
 2. Pick up produce lying in the building. Empty an auto-grabber if there is one (through its item menu).
 3. Milk or shear animals with produce ready, when the farmer has the tool.
-4. When the building does not feed by itself: take hay from the hopper and fill the empty feeding spots.
+4. When the building does not feed by itself: take hay from the hopper and put it out, one portion per animal living there (the hopper's own limit).
+5. When all buildings are tended, pet the cat or dog if it is on the farm or in the player's house.
 
 Rules found in the game's code that the job must follow:
 
 - **Not after 7pm:** from then on, petting opens a "trying to sleep" message instead. The job refuses to start and says why.
 - **Safe hands:** petting while holding a Golden Animal Cracker uses the cracker up, and the hopper only gives hay to empty hands. The job selects an empty slot or a tool first, as other jobs already do, and stops if it cannot.
-- **Hay:** the hopper hands out only as much hay as there are animals without hay on the benches.
+- **Hay:** the hopper hands out only as much hay as there are animals without hay on the benches. Animals that grazed outside are full and leave yesterday's hay.
+- **Milk Pail and Shears** look for the animal's harvest area (`FarmAnimal.GetHarvestBoundingBox`), which is not where its body is; the job aims there. Produce of a higher quality does not stack with normal produce, so the backpack check uses the real item.
+- **Doorways:** an animal standing in a building's doorway blocks the path; navigation now waits briefly and looks again before calling the way blocked.
 
-The result lists what was done and what could not be done, for example "no Milk Pail" or "no hay left". Buying hay stays a separate `buy_items` call, because it spends money. Truffles outdoors are left to `collect_forage`; whether it already picks them up is checked when building.
+The result lists what was done and what could not be done, for example "no Milk Pail" or "no hay left". Buying hay stays a separate `buy_items` call, because it spends money. Truffles outdoors are left to `collect_forage`, which picks up any spawned object on a map.
 
 ### `tend_machines`
 
@@ -224,9 +228,9 @@ Each can be set as a goal by itself.
 | D5 | End-of-day record on every day | A day played by hand leaves a summary with the right money and shipping-bin value | Done 2026-11-16. Summer 8 played by hand (100g received, 3 Parsnips in the bin, slept): the record says +100g before shipping, 105g in the bin (the game's shipping screen also showed 105g) and no autopilot jobs. Mini shipping bins are counted too |
 | D6 | Morning briefing | Shows once on a normal day, a birthday, a festival day and a cart day, and not again after reloading the save; cart lines match the cart's menu and two calls agree; the setting switches it off; with no agent the fixed text shows | Done 2026-11-16. Normal day (summer 9), Maru's birthday (summer 10), the Luau (summer 11, festival first) and a cart day (summer 12) each showed one briefing; reloading summer 9 did not repeat it. Cart lines (Pomegranate 900g, Bream 800g, Maki Roll 1100g) match the cart's own menu, and two calls agree. With the copilot stopped, the fixed text showed at once; with MorningBriefing off, nothing showed |
 | D7 | Guide prompt and spoiler rule | Five guide questions answered correctly in the game; a briefing on a save with an undiscovered taste does not use it | Done 2026-11-16. Five questions answered correctly in the game: where the copper ore is (42: farm chest 30, house chest 12), gifts for Maru (Cauliflower loved, marked as not discovered, one held back for a bundle), the Summer Crops plan (last planting days and Pierre's prices), today's priorities, and fetching 2 eggs from the fridge (it freed a backpack slot first after the new "backpack is full" message). On Maru's birthday the briefing did not suggest the undiscovered Cauliflower |
-| C1 | `get_animals` | Matches the animals' own menus and the buildings on the test save; the hay count matches the silo |  |
-| C2 | `tend_animals` | All animals petted (inside and outside), produce collected, feeding spots filled; missing tool and no hay are reported; it refuses after 7pm; a held Golden Animal Cracker is not used up |  |
-| C3 | `tend_machines` | Ready output collected; kegs refilled with a named item; a furnace without coal and an item the machine refuses are both reported before walking |  |
+| C1 | `get_animals` | Matches the animals' own menus and the buildings on the test save; the hay count matches the silo | Done 2026-11-16. Coop (2 chickens, one outside) and Barn (1 cow) on the test save: 4 feeding spots each, hay 20 of 240 silo capacity, eggs on the floor and in the auto-grabber, milk ready. Names, hearts and petted state match the game's Animals tab; the cat is listed as there |
+| C2 | `tend_animals` | All animals petted (inside and outside), produce collected, feeding spots filled; missing tool and no hay are reported; it refuses after 7pm; a held Golden Animal Cracker is not used up | Done 2026-11-16. All animals petted inside and outside, plus the cat; floor and grabber eggs collected; milk collected (3 of 3 in a row after aiming at the harvest area); hay put out one per animal (2 in the coop, 1 in the barn, silo 20 to 17). No Milk Pail and no hay are reported; it refuses at 7pm; a held Golden Animal Cracker is kept |
+| C3 | `tend_machines` | Ready output collected; kegs refilled with a named item; a furnace without coal and an item the machine refuses are both reported before walking | Done 2026-11-16. Two ready Kegs emptied (Beer x2); two empty Kegs filled with Hops (Pale Ale, 2250 minutes); a Furnace with Copper Ore and no Coal, and a Keg with Copper Ore, are refused before walking (0 game minutes) |
 
 Suggested order: D1 to D7, then a release (0.4.0). Then C1 to C3 and a second release (0.5.0). Routines follow with their own design.
 

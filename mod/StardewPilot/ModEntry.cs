@@ -58,6 +58,7 @@ public sealed class ModEntry : Mod
         this.tools.Add(ItemFinder.Tool());
         this.tools.Add(GiftIdeas.Tool());
         this.tools.Add(BundlePlan.Tool());
+        this.tools.Add(AnimalTools.Tool());
         this.runner = new JobRunner(this.Monitor, () => this.config);
         Navigation.Config = () => this.config;
         ActionTools.Register(this.tools, this.runner, new Macros(() => this.config, helper));

@@ -149,6 +149,17 @@ internal static class Navigation
             {
                 // Blocked by weeds, stones or twigs? Walk through them, clearing them with tools like a player would.
                 List<Point>? clearing = PathThroughDebris(loc, Game1.player.TilePoint, target, adjacent);
+                if (clearing == null && attempt < 2 && (loc.animals.Length > 0 || loc.characters.Count > 0))
+                {
+                    // An animal or villager may be standing in a doorway; they move on, so wait and look again.
+                    ctx.Log($"no path to ({target.X},{target.Y}); waiting for animals or villagers to move");
+                    for (int i = 0; i < 90; i++)
+                    {
+                        ctx.Touch();
+                        yield return null;
+                    }
+                    continue;
+                }
                 if (clearing == null)
                     throw JobContext.Fail($"No path to tile ({target.X}, {target.Y}) in {loc.DisplayName}.");
                 foreach (object? step in WalkClearing(ctx, loc, clearing))

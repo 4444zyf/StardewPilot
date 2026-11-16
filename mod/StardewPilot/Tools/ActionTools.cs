@@ -133,6 +133,24 @@ internal static class ActionTools
             Schema.Object(("floors", Schema.Integer("How many floors to go down. Default 3."), false)),
             a => ctx => Mining.Descend(ctx, macros.Config, Math.Clamp(a.Int("floors") ?? 3, 1, 20)));
 
+        var chores = new Chores(() => macros.Config);
+
+        Action("tend_animals",
+            "Look after the farm animals in one building or all: pick up produce on the floor, empty the auto-grabber, put out hay from the hopper (unless the building feeds itself), " +
+            "pet every animal not petted today (and the cat or dog when all buildings are tended), and milk or shear the ones with produce ready when the farmer has the Milk Pail or Shears. Animals out on the farm are visited too. " +
+            "Refuses after 7pm (animals are asleep). Buying hay is a separate buy_items call.",
+            Schema.Object(("building", Schema.String("Only this building, for example Coop or Barn. Default all animal buildings."), false)),
+            a => ctx => chores.TendAnimals(ctx, a.Str("building")));
+
+        Action("tend_machines",
+            "Collect the output of every ready machine on a map (default Farm), optionally only one kind. Optionally refill empty machines of that kind with an item from the backpack " +
+            "(for example kegs with Hops); before walking it checks with the game that the machine takes the item, that there are enough of it, and any fuel (a furnace needs coal).",
+            Schema.Object(
+                ("location", Schema.String("Map name, for example Farm, Shed or Cellar. Default Farm."), false),
+                ("machine", Schema.String("Only this kind of machine, for example Keg, Preserves Jar, Furnace."), false),
+                ("refillWith", Schema.String("Item to load into the empty machines of that kind afterwards, for example Hops. Needs machine."), false)),
+            a => ctx => chores.TendMachines(ctx, a.Str("location"), a.Str("machine"), a.Str("refillWith")));
+
         Action("go_to_bed",
             "Walk home and go to sleep, ending the day (the game saves overnight).",
             Schema.Object(),
