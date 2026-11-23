@@ -1,0 +1,70 @@
+{
+	"meta": {
+		"title": "StardewPilot : un copilote pour votre ferme de Stardew Valley",
+		"description": "Un mod de copilote IA pour Stardew Valley. Posez-lui vos questions, confiez-lui les corvées, ou apprenez-lui votre routine en la faisant une fois."
+	},
+	"nav": { "language": "Langue", "jobs": "Ce qu'il fait", "shots": "En jeu", "calendar": "Calendrier", "start": "Commencer" },
+	"sign": { "tagline": "un copilote pour votre ferme" },
+	"lead": {
+		"text": "Un mod de copilote IA pour Stardew Valley. Posez-lui vos questions, confiez-lui les corvées, ou apprenez-lui votre routine en la faisant une fois.",
+		"download": "Télécharger",
+		"source": "Code sur GitHub"
+	},
+	"jobs": {
+		"title": "Besoin d'aide ? Le Pilote s'en charge.",
+		"try": "Essayez :",
+		"notes": [
+			{ "tag": "Questions", "title": "Demandez tout", "text": "Cultures, cadeaux, poissons, recettes, paquets, où sont vos affaires. Réponses tirées de votre propre partie, dans un chat privé sur F8.", "say": "qu'est-ce qu'Abigail aime ?" },
+			{ "tag": "Corvées", "title": "Confiez-les", "text": "Arrosage, récolte, semis, achats, expédition, pêche, la mine, les animaux et les machines. Il marche et travaille comme un joueur.", "say": "arrose les cultures, puis va pêcher" },
+			{ "tag": "Journée", "title": "Laissez-le jouer", "text": "Fixez un objectif et appuyez sur F10. Chaque matin il écrit un plan, joue la journée, écrit un résumé et va se coucher.", "say": "joue tout seul, objectif : 5 000 g avant l'été" },
+			{ "tag": "Apprenti", "title": "Il vous apprend", "text": "Il tient un journal de ce que vous faites à la main, et en déduit votre matinée habituelle, votre heure de coucher et vos jours de pluie.", "say": "fais ma matinée habituelle" },
+			{ "tag": "Routines", "title": "Montrez une fois", "text": "Dites « regarde-moi », faites la tâche à la main et donnez-lui un nom. Lancez-la plus tard, ou chaque matin toute seule.", "say": "c'est ma tournée des truffes" },
+			{ "tag": "C'est vous", "title": "Il demande d'abord", "text": "Expédier, vendre, offrir et les gros achats vous sont demandés dans le jeu. Bougez, et il s'arrête aussitôt.", "say": "Oui · Oui, et ne plus demander · Non" }
+		]
+	},
+	"shots": {
+		"title": "En jeu",
+		"lead": "De vraies captures du mod. Ses fenêtres suivent les menus et la langue du jeu.",
+		"items": [
+			{ "caption": "6 h. Une routine que vous lui avez apprise démarre toute seule, sauf si vous touchez à quelque chose.", "alt": "La maison à 6 h avec un message : « long walk » va démarrer tout seul." },
+			{ "caption": "Le chat privé sur F8, qui répond à partir du jeu en cours.", "alt": "La fenêtre de chat de StardewPilot qui répond à ce qu'Abigail aime." },
+			{ "caption": "Tout ce qui change vos plans demande d'abord, dans la boîte de question du jeu.", "alt": "Une question du jeu pour changer l'horaire d'une routine, avec Oui et Non." }
+		]
+	},
+	"calendar": {
+		"title": "Printemps, année 1",
+		"days": ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"],
+		"today": "Aujourd'hui",
+		"legend": [
+			"Tournée des truffes : démarre toute seule chaque matin",
+			"Tournée en ville : proposée à 16 h le vendredi, F7 la lance",
+			"Pluie : « mes corvées d'intérieur » proposées",
+			"Un anniversaire : le briefing du matin vous le rappelle"
+		],
+		"rulesTitle": "Règles de la maison",
+		"rules": [
+			"Expédier, vendre, offrir et les achats de plus de 500 g vous sont demandés d'abord",
+			"Bougez ou utilisez un outil, et il s'arrête aussitôt. F9 le désactive",
+			"À 23 h 30 le travail s'arrête et le fermier va se coucher",
+			"Sa mémoire et votre journal sont de simples fichiers sur votre ordinateur. L'état du jeu ne va qu'au modèle que vous choisissez"
+		]
+	},
+	"start": {
+		"title": "Commencer",
+		"steps": [
+			{ "title": "Installer", "text": "Stardew Valley 1.6 sur PC avec SMAPI 4.5+, Node.js 22.19+ et pi. Décompressez la version dans votre dossier Mods." },
+			{ "title": "L'activer", "text": "Dans le config.json du mod, mettez Launcher.Enabled à true, puis lancez le jeu. Le copilote démarre avec lui." },
+			{ "title": "Choisir un modèle", "text": "Appuyez sur F8 et tapez /settings. Connectez un abonnement, ou ajoutez une clé d'API ou un modèle sur votre ordinateur." },
+			{ "title": "Dire bonjour", "text": "« Qu'est-ce que je fais aujourd'hui ? » Le copilote répond dans la langue où vous écrivez." }
+		],
+		"more": "Instructions complètes, réglages et tous les outils : le README"
+	},
+	"footer": {
+		"fan": "StardewPilot est un mod non officiel fait par des fans. Il n'est ni affilié à ConcernedApe ni approuvé par lui. Stardew Valley est une marque de ConcernedApe LLC. Les captures montrent le jeu avec ce mod.",
+		"license": "Licence MIT",
+		"releases": "Versions",
+		"docs": "Documents de conception",
+		"issues": "Signaler un problème",
+		"fonts": "Polices : Fusion Pixel et Jersey (SIL Open Font License). Pixel art dessiné pour ce site."
+	}
+}

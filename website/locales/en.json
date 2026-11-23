@@ -1,0 +1,70 @@
+{
+	"meta": {
+		"title": "StardewPilot: a copilot for your Stardew Valley farm",
+		"description": "An AI copilot mod for Stardew Valley. Ask it anything, hand it the chores, or teach it your routine by doing it once."
+	},
+	"nav": { "language": "Language", "jobs": "Jobs", "shots": "In the game", "calendar": "Calendar", "start": "Get started" },
+	"sign": { "tagline": "a copilot for your farm" },
+	"lead": {
+		"text": "An AI copilot mod for Stardew Valley. Ask it anything, hand it the chores, or teach it your routine by doing it once.",
+		"download": "Download",
+		"source": "Source on GitHub"
+	},
+	"jobs": {
+		"title": "Help wanted? Pilot's on it.",
+		"try": "Try:",
+		"notes": [
+			{ "tag": "Questions", "title": "Ask anything", "text": "Crops, gifts, fish, recipes, bundles, where your things are. Answered from your own save, in a private chat on F8.", "say": "what does Abigail like?" },
+			{ "tag": "Chores", "title": "Hand them over", "text": "Watering, harvest, planting, shopping, shipping, fishing, the mines, animals and machines. It walks and works like a player.", "say": "water the crops, then go fishing" },
+			{ "tag": "Full day", "title": "Let it play", "text": "Set a goal and press F10. Each morning it writes a plan, plays the day, writes a summary and goes to bed.", "say": "play by yourself, goal: 5,000g by summer" },
+			{ "tag": "Apprentice", "title": "It learns you", "text": "It keeps a diary of what you do by hand, and works out your usual morning, your bedtime and your rainy days.", "say": "do my usual morning" },
+			{ "tag": "Routines", "title": "Show it once", "text": "Say \"watch me\", do a task by hand, and name it. Run it later, or let it start by itself every morning.", "say": "that's my truffle run" },
+			{ "tag": "Your call", "title": "It asks first", "text": "Shipping, selling, gifts and big purchases ask you in the game. Move, and it stops at once.", "say": "Yes · Yes, and don't ask again · No" }
+		]
+	},
+	"shots": {
+		"title": "In the game",
+		"lead": "Real screenshots of the mod. Its windows follow the game's own menus and language.",
+		"items": [
+			{ "caption": "6:00 am. A routine you taught it starts by itself, unless you touch anything.", "alt": "The farmhouse at 6am with a message: \"long walk\" is about to start by itself." },
+			{ "caption": "The private chat on F8, answering from the running game.", "alt": "The StardewPilot chat window answering what Abigail likes." },
+			{ "caption": "Anything that changes your plans asks first, in the game's own question box.", "alt": "An in-game question asking to change a routine's schedule, with Yes and No." }
+		]
+	},
+	"calendar": {
+		"title": "Spring, Year 1",
+		"days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+		"today": "Today",
+		"legend": [
+			"Truffle run: starts by itself every morning",
+			"Town run: offered at 4pm on Fridays, F7 starts it",
+			"Rain: \"my indoor chores\" on offer",
+			"A birthday: the morning briefing reminds you"
+		],
+		"rulesTitle": "House rules",
+		"rules": [
+			"Shipping, selling, gifts and purchases over 500g ask you first",
+			"Move or use a tool, and it stops at once. F9 switches it off",
+			"At 11:30pm work stops and the farmer goes to bed",
+			"Its memory and your diary are plain files on your computer. Game state goes only to the model you choose"
+		]
+	},
+	"start": {
+		"title": "Get started",
+		"steps": [
+			{ "title": "Install", "text": "Stardew Valley 1.6 on PC with SMAPI 4.5+, Node.js 22.19+ and pi. Unzip the release into your Mods folder." },
+			{ "title": "Switch it on", "text": "In the mod's config.json, set Launcher.Enabled to true, then start the game. The copilot starts with it." },
+			{ "title": "Pick a model", "text": "Press F8 and type /settings. Sign in with a subscription, or add an API key or a model on your own computer." },
+			{ "title": "Say hello", "text": "\"What should I do today?\" The copilot answers in the language you write in." }
+		],
+		"more": "Full instructions, settings and every tool: the README"
+	},
+	"footer": {
+		"fan": "StardewPilot is an unofficial fan-made mod. It is not affiliated with or endorsed by ConcernedApe. Stardew Valley is a trademark of ConcernedApe LLC. The game screenshots are of the game running this mod.",
+		"license": "MIT license",
+		"releases": "Releases",
+		"docs": "Design docs",
+		"issues": "Report a problem",
+		"fonts": "Fonts: Fusion Pixel and Jersey (SIL Open Font License). Pixel art drawn for this site."
+	}
+}
