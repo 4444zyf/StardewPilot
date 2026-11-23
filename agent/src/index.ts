@@ -200,6 +200,12 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 				);
 			}
 			if (!selfPlay) cancelStep();
+		} else if (method === "routines/ran" && typeof p.text === "string") {
+			// The mod ran one of the player's routines by its schedule and told the player itself; keep it as context.
+			pi.sendMessage(
+				{ customType: "stardew-routine", content: `[The mod ran the player's routine by its schedule] ${p.text}`, display: true },
+				{ deliverAs: "nextTurn" },
+			);
 		} else if (method === "tips/warning" && typeof p.text === "string") {
 			// Already shown to the player as fixed text; keep it as context for later answers.
 			pi.sendMessage(
@@ -222,7 +228,7 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 	/** Tools that make the farmer act (not reads, memory writes or self-play switches). */
 	function isGameAction(name: string): boolean {
 		// go_to_bed is a safety action (passing out costs gold): never blocked by the re-plan limit.
-		return !readOnly.has(name) && !name.startsWith("write_") && !["set_self_play", "stop_autopilot", "go_to_bed"].includes(name);
+		return !readOnly.has(name) && !name.startsWith("write_") && !["set_self_play", "stop_autopilot", "go_to_bed", "save_routine", "forget_routine", "schedule_routine", "unschedule_routine"].includes(name);
 	}
 
 	function cancelStep() {
@@ -508,7 +514,8 @@ export function daySeedMessage(seed: MemorySeed): string {
 				`Default wording, one point per line:\n${seed.briefing.fallback ?? ""}`,
 				`Rewrite the default wording as a short, friendly morning briefing in the game's language (${language}): keep every point, at most five lines, most important first (birthdays, a festival, last chances and quests ending before weather), plain text, no heading, no question back. ` +
 					`A usualDay fact is the player's habit, observed by the mod: say it as "you usually ...", never as advice. ` +
-					`A habitOffer fact is shown only once: keep it as its own line and quote its "say" phrase exactly as written.`,
+					`A habitOffer fact is shown only once: keep it as its own line and quote its "say" phrase exactly as written. ` +
+					`A routinesToday fact lists the player's own scheduled routines: the least important point, the first to drop when there are more than five.`,
 				"Answer from these facts only: do not call tools and do not add facts or advice of your own. Computed parts (gift ideas, last chances) are estimates: word them that way. Then wait for the player's questions or commands.",
 			].join("\n"),
 		);

@@ -30,15 +30,16 @@ internal sealed class Chores
     {
         // From 7pm a stationary animal answers petting with "trying to sleep" instead (FarmAnimal.pet).
         if (Game1.timeOfDay >= 1900)
-            throw JobContext.Fail("It's after 7pm: the animals are trying to sleep and cannot be petted. Tend them earlier tomorrow.");
+            throw JobContext.Fail(I18n.Get("fail.animals-asleep"));
 
         var buildings = AnimalTools.AnimalBuildings()
             .Where(b => buildingFilter == null
+                || b.GetIndoors()?.NameOrUniqueName == buildingFilter
                 || AnimalTools.BuildingName(b).Contains(buildingFilter, StringComparison.OrdinalIgnoreCase)
                 || b.buildingType.Value.Contains(buildingFilter, StringComparison.OrdinalIgnoreCase))
             .ToList();
         if (buildings.Count == 0)
-            throw JobContext.Fail(buildingFilter == null ? "The farm has no animal buildings." : $"No animal building matches '{buildingFilter}'.");
+            throw JobContext.Fail(buildingFilter == null ? I18n.Get("fail.no-animal-buildings") : I18n.Get("fail.no-such-building", new { name = buildingFilter }));
 
         var report = new TendReport();
         foreach (Building b in buildings)
@@ -415,7 +416,8 @@ internal sealed class Chores
     public IEnumerable TendMachines(JobContext ctx, string? location, string? machineFilter, string? refillItem)
     {
         GameLocation loc = StateTools.ResolveLocation(location ?? "Farm");
-        bool Kind(SObject o) => machineFilter == null || o.DisplayName.Contains(machineFilter, StringComparison.OrdinalIgnoreCase) || o.Name.Contains(machineFilter, StringComparison.OrdinalIgnoreCase);
+        string? kindName = machineFilter != null && machineFilter.StartsWith("(") ? ItemRegistry.GetDataOrErrorItem(machineFilter).DisplayName : machineFilter;
+        bool Kind(SObject o) => machineFilter == null || o.QualifiedItemId == machineFilter || o.DisplayName.Contains(machineFilter, StringComparison.OrdinalIgnoreCase) || o.Name.Contains(machineFilter, StringComparison.OrdinalIgnoreCase);
         bool IsMachine(SObject o) => o.GetMachineData() != null && o is not Chest;
 
         // Refill check first, before any walking: does this kind of machine take the item at all, and is there enough of it and of the fuel?
@@ -423,14 +425,14 @@ internal sealed class Chores
         if (refillItem != null)
         {
             if (machineFilter == null)
-                throw JobContext.Fail("Say which kind of machine to refill (for example Keg).");
-            refillQid = StateTools.FindItemId(refillItem) ?? throw JobContext.Fail($"No item called '{refillItem}'.");
+                throw JobContext.Fail(I18n.Get("fail.refill-which"));
+            refillQid = StateTools.FindItemId(refillItem) ?? throw JobContext.Fail(I18n.Get("fail.no-item", new { name = refillItem }));
             SObject? sample = loc.objects.Values.FirstOrDefault(o => IsMachine(o) && Kind(o));
             if (sample == null)
-                throw JobContext.Fail($"There is no {machineFilter} in {loc.DisplayName}.");
+                throw JobContext.Fail(I18n.Get("fail.none-here", new { thing = kindName, place = loc.DisplayName }));
             Item? held = Game1.player.Items.FirstOrDefault(i => i?.QualifiedItemId == refillQid);
             if (held == null)
-                throw JobContext.Fail($"There is no {ItemRegistry.GetDataOrErrorItem(refillQid).DisplayName} in the backpack.");
+                throw JobContext.Fail(I18n.Get("fail.not-in-backpack", new { item = ItemRegistry.GetDataOrErrorItem(refillQid).DisplayName }));
             if (RefillProblem(sample, held) is { } why)
                 throw JobContext.Fail(why);
         }
@@ -517,7 +519,7 @@ internal sealed class Chores
         Actions.SelectSafeHand();
         ctx.Report["refilled"] = filled;
         if (filled == 0 && ctx.Problems.Count == 0)
-            ctx.Problems.Add($"No empty {machineFilter} was refilled.");
+            ctx.Problems.Add($"No empty {kindName} was refilled.");
     }
 
     /// <summary>Why this machine will not take the held stack, or null if it will. Asks the game's machine code without changing anything.</summary>
@@ -540,18 +542,18 @@ internal sealed class Chores
 
         MachineData? data = machine.GetMachineData();
         if (data == null)
-            return $"{machineName} is not a machine that takes items.";
+            return I18n.Get("fail.machine-takes-nothing", new { machine = machineName });
         foreach (MachineItemAdditionalConsumedItems extra in data.AdditionalConsumedItems ?? new())
         {
             int have = Game1.player.Items.Where(i => i?.QualifiedItemId == ItemRegistry.QualifyItemId(extra.ItemId)).Sum(i => i.Stack);
             if (have < extra.RequiredCount)
-                return $"{machineName} also needs {extra.RequiredCount} {ItemRegistry.GetDataOrErrorItem(extra.ItemId).DisplayName} in the backpack (there {(have == 1 ? "is" : "are")} {have}).";
+                return I18n.Get("fail.machine-also-needs", new { machine = machineName, count = extra.RequiredCount, item = ItemRegistry.GetDataOrErrorItem(extra.ItemId).DisplayName, have });
         }
         Item many = held.getOne();
         many.Stack = 999;
         if (MachineDataUtility.TryGetMachineOutputRule(machine, data, MachineOutputTrigger.ItemPlacedInMachine, many, Game1.player, machine.Location ?? Game1.getFarm(), out _, out MachineOutputTriggerRule? trigger, out _, out _)
             && trigger != null && trigger.RequiredCount > held.Stack)
-            return $"{machineName} needs {trigger.RequiredCount} {itemName} at a time; the backpack has {held.Stack}.";
-        return $"{machineName} does not take {itemName}.";
+            return I18n.Get("fail.machine-needs-more", new { machine = machineName, count = trigger.RequiredCount, item = itemName, have = held.Stack });
+        return I18n.Get("fail.machine-refuses", new { machine = machineName, item = itemName });
     }
 }

@@ -108,7 +108,7 @@ internal sealed class Macros
             if (reached && Game1.player.TilePoint == across)
                 yield break;
         }
-        throw JobContext.Fail($"Could not get close enough to {who.displayName}.");
+        throw JobContext.Fail(I18n.Get("fail.cannot-reach-npc", new { npc = who.displayName }));
     }
 
     private static NPC FindNpc(string name)
@@ -123,7 +123,7 @@ internal sealed class Macros
             });
         }
         if (found?.currentLocation == null)
-            throw JobContext.Fail($"Could not find a villager called '{name}' right now.");
+            throw JobContext.Fail(I18n.Get("fail.no-villager", new { name }));
         return found;
     }
 
@@ -133,7 +133,7 @@ internal sealed class Macros
     {
         Tool tool = Game1.player.Items.OfType<Tool>().FirstOrDefault(t =>
                 t.DisplayName.Equals(toolName, StringComparison.OrdinalIgnoreCase) || t.Name.Equals(toolName, StringComparison.OrdinalIgnoreCase) || t.GetType().Name.Equals(toolName, StringComparison.OrdinalIgnoreCase))
-            ?? throw JobContext.Fail($"No tool called '{toolName}' in the backpack.");
+            ?? throw JobContext.Fail(I18n.Get("fail.no-tool-called", new { name = toolName }));
         foreach (object? s in Navigation.WalkWithinMap(ctx, tile, adjacent: true))
             yield return s;
         foreach (object? s in Actions.UseTool(ctx, this.Cfg, tool, tile))
@@ -169,7 +169,7 @@ internal sealed class Macros
     public IEnumerable WaterCrops(JobContext ctx, string? location)
     {
         GameLocation loc = StateTools.ResolveLocation(location ?? "Farm");
-        WateringCan can = Actions.FindTool<WateringCan>() ?? throw JobContext.Fail("There is no watering can in the backpack.");
+        WateringCan can = Actions.FindTool<WateringCan>() ?? throw JobContext.Fail(I18n.Get("fail.no-can"));
         if (loc.IsOutdoors && Game1.IsRainingHere(loc))
         {
             ctx.Report["note"] = "It is raining here, so outdoor crops are already watered.";
@@ -267,7 +267,7 @@ internal sealed class Macros
         {
             var ready = loc.terrainFeatures.Pairs
                 .Where(p => p.Value is HoeDirt { crop: not null } d && d.readyForHarvest() && !gaveUp.Contains(p.Key)
-                    && (cropFilter == null || CropName(d.crop).Contains(cropFilter, StringComparison.OrdinalIgnoreCase)))
+                    && (cropFilter == null || CropMatches(d.crop, cropFilter)))
                 .Select(p => p.Key);
             if (Nearest(ready) is not { } tile)
                 break;
@@ -282,7 +282,7 @@ internal sealed class Macros
             var before = InventoryCounts();
             if (dirt.crop.GetHarvestMethod() == HarvestMethod.Scythe)
             {
-                MeleeWeapon scythe = Actions.FindScythe() ?? throw JobContext.Fail("This crop needs a scythe, and there is none in the backpack.");
+                MeleeWeapon scythe = Actions.FindScythe() ?? throw JobContext.Fail(I18n.Get("fail.no-scythe"));
                 foreach (object? s in Actions.UseTool(ctx, this.Cfg, scythe, target))
                     yield return s;
             }
@@ -311,6 +311,10 @@ internal sealed class Macros
             ctx.Problems.Add($"{gaveUp.Count} ready crops could not be harvested.");
     }
 
+    /// <summary>A crop filter: the harvest's item id (as routines name it), else part of its name.</summary>
+    private static bool CropMatches(Crop crop, string filter) =>
+        filter.StartsWith("(") ? ItemRegistry.QualifyItemId(crop.indexOfHarvest.Value) == filter : CropName(crop).Contains(filter, StringComparison.OrdinalIgnoreCase);
+
     private static string CropName(Crop crop) =>
         crop.indexOfHarvest.Value is { Length: > 0 } id ? ItemRegistry.GetDataOrErrorItem("(O)" + id).DisplayName : "";
 
@@ -318,17 +322,17 @@ internal sealed class Macros
 
     public IEnumerable PlantSeeds(JobContext ctx, string seedQuery, int? count, string? location, bool water)
     {
-        string qid = StateTools.FindItemId(seedQuery) ?? throw JobContext.Fail($"No item called '{seedQuery}'.");
+        string qid = StateTools.FindItemId(seedQuery) ?? throw JobContext.Fail(I18n.Get("fail.no-item", new { name = seedQuery }));
         Item? seed = Game1.player.Items.FirstOrDefault(i => i?.QualifiedItemId == qid);
         if (seed == null)
-            throw JobContext.Fail($"There are no {ItemRegistry.GetDataOrErrorItem(qid).DisplayName} in the backpack.");
+            throw JobContext.Fail(I18n.Get("fail.not-in-backpack", new { item = ItemRegistry.GetDataOrErrorItem(qid).DisplayName }));
         if (!Crop.TryGetData(seed.ItemId, out CropData? data))
-            throw JobContext.Fail($"{seed.DisplayName} are not seeds.");
+            throw JobContext.Fail(I18n.Get("fail.not-seeds", new { item = seed.DisplayName }));
 
         GameLocation loc = StateTools.ResolveLocation(location ?? "Farm");
         bool seasonless = !loc.IsOutdoors || loc.SeedsIgnoreSeasonsHere();
         if (!seasonless && !data.Seasons.Contains(Game1.season))
-            throw JobContext.Fail($"{seed.DisplayName} cannot grow in {Game1.currentSeason} here. They grow in {string.Join(", ", data.Seasons)}.");
+            throw JobContext.Fail(I18n.Get("fail.wrong-season", new { item = seed.DisplayName, season = Utility.getSeasonNameFromNumber((int)Game1.season), seasons = I18n.List(data.Seasons.Select(s => Utility.getSeasonNameFromNumber((int)s))) }));
 
         int have = Game1.player.Items.Where(i => i?.QualifiedItemId == qid).Sum(i => i.Stack);
         int want = Math.Min(count ?? have, have);
@@ -338,7 +342,7 @@ internal sealed class Macros
         Hoe? hoe = Actions.FindTool<Hoe>();
         List<Point> tiles = PickPlantingTiles(loc, want, canTill: hoe != null);
         if (tiles.Count == 0)
-            throw JobContext.Fail($"No free soil found in {loc.DisplayName} to plant on.");
+            throw JobContext.Fail(I18n.Get("fail.no-soil", new { place = loc.DisplayName }));
 
         int planted = 0;
         var plantedTiles = new List<Point>();
@@ -464,16 +468,18 @@ internal sealed class Macros
 
     // ---------------------------------------------------------------- forage
 
-    public IEnumerable CollectForage(JobContext ctx, string? location)
+    public IEnumerable CollectForage(JobContext ctx, string? location, List<string>? only = null)
     {
         GameLocation loc = StateTools.ResolveLocation(location);
+        // Only some kinds: by item id (as routines name them) or by name.
+        var kinds = only?.Select(q => StateTools.FindItemId(q) ?? throw JobContext.Fail(I18n.Get("fail.no-item", new { name = q }))).ToHashSet();
         foreach (object? s in Navigation.WalkTo(ctx, loc.NameOrUniqueName, null))
             yield return s;
         var got = new List<string>();
         var gaveUp = new HashSet<Vector2>();
         while (true)
         {
-            var forage = loc.objects.Pairs.Where(p => p.Value.IsSpawnedObject && !gaveUp.Contains(p.Key)).Select(p => p.Key);
+            var forage = loc.objects.Pairs.Where(p => p.Value.IsSpawnedObject && !gaveUp.Contains(p.Key) && (kinds == null || kinds.Contains(p.Value.QualifiedItemId))).Select(p => p.Key);
             if (Nearest(forage) is not { } tile)
                 break;
             SObject obj = loc.objects[tile];
@@ -539,28 +545,28 @@ internal sealed class Macros
 
     public IEnumerable Buy(JobContext ctx, string itemQuery, int count, string? shopId)
     {
-        string qid = StateTools.FindItemId(itemQuery) ?? throw JobContext.Fail($"No item called '{itemQuery}'.");
+        string qid = StateTools.FindItemId(itemQuery) ?? throw JobContext.Fail(I18n.Get("fail.no-item", new { name = itemQuery }));
         string name = ItemRegistry.GetDataOrErrorItem(qid).DisplayName;
-        var found = FindInShops(qid, shopId) ?? throw JobContext.Fail($"No shop sells {name} today{(shopId != null ? $" at {shopId}" : "")}.");
+        var found = FindInShops(qid, shopId) ?? throw JobContext.Fail(shopId != null ? I18n.Get("fail.not-sold-at", new { item = name, shop = StardewPilot.Apprentice.ApprenticeService.GameNames().Shop(shopId) }) : I18n.Get("fail.not-sold", new { item = name }));
         if (found.stock != int.MaxValue && found.stock < count)
             count = found.stock;
         int total = found.price * count;
         if (Game1.player.Money < total)
-            throw JobContext.Fail($"{count} {name} cost {total}g, but the farmer has {Game1.player.Money}g.");
-        if (total > this.Cfg.Autopilot.ConfirmSpendAbove)
+            throw JobContext.Fail(I18n.Get("fail.too-dear", new { count, item = name, total, money = Game1.player.Money }));
+        if (total > this.Cfg.Autopilot.ConfirmSpendAbove || ctx.AlwaysAsk)
         {
             bool yes = false;
-            foreach (object? s in Confirm.Ask(ctx, this.Cfg, this.helper, Permission.Spend, $"Buy {count} {name} for {total}g?", a => yes = a))
+            foreach (object? s in Confirm.Ask(ctx, this.Cfg, this.helper, Permission.Spend, I18n.Get("ask.buy", new { count, item = name, total }), a => yes = a))
                 yield return s;
             if (!yes)
-                throw JobContext.Fail("The player said no to the purchase.");
+                throw JobContext.Fail(I18n.Get("fail.said-no-buy"));
         }
 
         string shopMap = ShopLocations[found.shop];
         foreach (object? s in Navigation.WalkTo(ctx, shopMap, null))
             yield return s;
         (Point counter, Point stand) = FindCounter(Game1.currentLocation, found.shop)
-            ?? throw JobContext.Fail($"Could not find the counter for {found.shop} in {Game1.currentLocation.DisplayName}.");
+            ?? throw JobContext.Fail(I18n.Get("fail.no-counter", new { shop = StardewPilot.Apprentice.ApprenticeService.GameNames().Shop(found.shop), place = Game1.currentLocation.DisplayName }));
         foreach (object? s in Navigation.WalkWithinMap(ctx, stand, adjacent: false))
             yield return s;
 
@@ -571,16 +577,16 @@ internal sealed class Macros
         if (Game1.activeClickableMenu is DialogueBox)
         {
             string? why = Actions.CloseDialogue();
-            throw JobContext.Fail($"The shop did not open: {why}");
+            throw JobContext.Fail(I18n.Get("fail.shop-closed-why", new { why }));
         }
         if (Game1.activeClickableMenu is not ShopMenu shopMenu)
-            throw JobContext.Fail("The shop did not open (the shopkeeper may be away or the shop closed).");
+            throw JobContext.Fail(I18n.Get("fail.shop-closed"));
 
         ISalable? salable = shopMenu.forSale.FirstOrDefault(s => s is Item i && i.QualifiedItemId == qid);
         if (salable == null)
         {
             shopMenu.exitThisMenu();
-            throw JobContext.Fail($"{name} is not on sale here right now.");
+            throw JobContext.Fail(I18n.Get("fail.not-on-sale", new { item = name }));
         }
 
         var tryPurchase = this.helper.Reflection.GetMethod(shopMenu, "tryToPurchaseItem");
@@ -663,11 +669,11 @@ internal sealed class Macros
         var skipped = new List<string>();
         foreach (var (query, count) in wanted)
         {
-            string qid = StateTools.FindItemId(query) ?? throw JobContext.Fail($"No item called '{query}'.");
+            string qid = StateTools.FindItemId(query) ?? throw JobContext.Fail(I18n.Get("fail.no-item", new { name = query }));
             var stacks = Game1.player.Items.Where(i => i?.QualifiedItemId == qid && i.canBeShipped()).ToList();
             if (stacks.Count == 0)
             {
-                skipped.Add($"{ItemRegistry.GetDataOrErrorItem(qid).DisplayName}: none in the backpack or it cannot be shipped");
+                skipped.Add(I18n.Get("ship.none", new { item = ItemRegistry.GetDataOrErrorItem(qid).DisplayName }));
                 continue;
             }
             int remaining = count ?? stacks.Sum(s => s.Stack);
@@ -679,7 +685,7 @@ internal sealed class Macros
                     // Keep one for the bundle; ship the rest.
                     int keep = 1;
                     int canShip = Math.Max(0, Math.Min(remaining, stack.Stack - keep));
-                    skipped.Add($"kept one {stack.DisplayName} for the {bundle}");
+                    skipped.Add(I18n.Get("ship.kept-for-bundle", new { item = stack.DisplayName, bundle }));
                     if (canShip > 0) { toShip.Add((stack, canShip)); remaining -= canShip; }
                     continue;
                 }
@@ -689,18 +695,18 @@ internal sealed class Macros
             }
         }
         if (toShip.Count == 0)
-            throw JobContext.Fail("Nothing to ship. " + string.Join("; ", skipped));
+            throw JobContext.Fail(I18n.Get("fail.nothing-to-ship", new { why = string.Join("; ", skipped) }));
 
         int value = toShip.Sum(t => Utility.getSellToStorePriceOfItem(t.item, countStack: false) * t.count);
-        string list = string.Join(", ", toShip.Select(t => $"{t.item.DisplayName} x{t.count}"));
+        string list = I18n.List(toShip.Select(t => $"{t.item.DisplayName} x{t.count}"));
         bool yes = false;
-        foreach (object? s in Confirm.Ask(ctx, this.Cfg, this.helper, Permission.Ship, $"Ship {list} (about {value}g)?", a => yes = a))
+        foreach (object? s in Confirm.Ask(ctx, this.Cfg, this.helper, Permission.Ship, I18n.Get("ask.ship", new { items = list, value }), a => yes = a))
             yield return s;
         if (!yes)
-            throw JobContext.Fail("The player said no to shipping.");
+            throw JobContext.Fail(I18n.Get("fail.said-no-ship"));
 
         Farm farm = Game1.getFarm();
-        Building bin = farm.buildings.FirstOrDefault(b => b is ShippingBin) ?? throw JobContext.Fail("The farm has no shipping bin.");
+        Building bin = farm.buildings.FirstOrDefault(b => b is ShippingBin) ?? throw JobContext.Fail(I18n.Get("fail.no-bin"));
         foreach (object? s in Navigation.WalkTo(ctx, "Farm", null))
             yield return s;
         foreach (object? s in Navigation.WalkWithinMap(ctx, new Point(bin.tileX.Value, bin.tileY.Value), adjacent: true))
@@ -737,9 +743,9 @@ internal sealed class Macros
 
     // ---------------------------------------------------------------- chests
 
-    public IEnumerable Store(JobContext ctx, List<string>? items, bool allButTools, Point? chestTile, string? location)
+    public IEnumerable Store(JobContext ctx, List<string>? items, bool allButTools, Point? chestTile, string? location, string? chestId = null)
     {
-        foreach (object? s in this.GoToChest(ctx, chestTile, location, c => chest = c))
+        foreach (object? s in this.GoToChest(ctx, chestTile, location, c => chest = c, chestId: chestId))
             yield return s;
         Chest box = chest!;
         var toStore = Game1.player.Items.Where(i => i != null && !(i is Tool) &&
@@ -749,7 +755,7 @@ internal sealed class Macros
         foreach (object? s in LockChest(box, ok => locked = ok))
             yield return s;
         if (!locked)
-            throw JobContext.Fail("Someone else has that chest open.");
+            throw JobContext.Fail(I18n.Get("fail.chest-in-use"));
         try
         {
             stored = PutInto(box, toStore, out bool full);
@@ -803,14 +809,14 @@ internal sealed class Macros
         done(got == true);
     }
 
-    public IEnumerable Take(JobContext ctx, string itemQuery, int? count, Point? chestTile, string? location, int minQuality = 0)
+    public IEnumerable Take(JobContext ctx, string itemQuery, int? count, Point? chestTile, string? location, int minQuality = 0, string? chestId = null)
     {
-        string qid = StateTools.FindItemId(itemQuery) ?? throw JobContext.Fail($"No item called '{itemQuery}'.");
+        string qid = StateTools.FindItemId(itemQuery) ?? throw JobContext.Fail(I18n.Get("fail.no-item", new { name = itemQuery }));
         string name = ItemRegistry.GetDataOrErrorItem(qid).DisplayName;
         // Several items can share a shown name (there are many "Stone"s): match the name as well as the id.
         bool Matches(Item? i) => i != null && (i.QualifiedItemId == qid || i.DisplayName.Equals(itemQuery.Trim(), StringComparison.OrdinalIgnoreCase)) && i.Quality >= minQuality;
         // Without a tile, go to the nearest chest (or fridge) that has the item.
-        foreach (object? s in this.GoToChest(ctx, chestTile, location, c => chest = c, prefer: c => c.GetItemsForPlayer().Any(Matches), allowFridge: true))
+        foreach (object? s in this.GoToChest(ctx, chestTile, location, c => chest = c, prefer: c => c.GetItemsForPlayer().Any(Matches), allowFridge: true, chestId: chestId))
             yield return s;
         Chest box = chest!;
         StardewValley.Inventories.IInventory items = box.GetItemsForPlayer();
@@ -829,9 +835,11 @@ internal sealed class Macros
         }
         items.RemoveEmptySlots();
         if (got == 0 && ctx.Problems.Contains("The backpack is full."))
-            throw JobContext.Fail($"The backpack is full, so no {name} could be taken.");
+            throw JobContext.Fail(I18n.Get("fail.backpack-full-take", new { item = name }));
         if (got == 0)
-            throw JobContext.Fail(minQuality > 0 ? $"That chest has no {name} of {ItemFinder.QualityName(minQuality)} quality or better." : $"That chest has no {name}.");
+            throw JobContext.Fail(minQuality > 0
+                ? I18n.Get("fail.chest-lacks-quality", new { item = name, quality = I18n.Get("quality." + ItemFinder.QualityName(minQuality)) })
+                : I18n.Get("fail.chest-lacks", new { item = name }));
         ctx.Report["took"] = $"{name} x{got}";
         ctx.Progress();
     }
@@ -988,9 +996,30 @@ internal sealed class Macros
     /// Walk next to a chest: the one at the tile, else the nearest one <paramref name="prefer"/> accepts, else the nearest.
     /// Player chests (Junimo chests and mini-fridges included) always count; the house fridge only when allowed or named by its tile.
     /// </summary>
-    private IEnumerable GoToChest(JobContext ctx, Point? chestTile, string? location, Action<Chest> found, Func<Chest, bool>? prefer = null, bool allowFridge = false)
+    private IEnumerable GoToChest(JobContext ctx, Point? chestTile, string? location, Action<Chest> found, Func<Chest, bool>? prefer = null, bool allowFridge = false, string? chestId = null)
     {
+        // A chest a routine names by its id: wherever it stands now (a kick moves a chest).
+        if (chestId != null)
+        {
+            // Routines keep the chest's place next to its id ("id@Map:x,y"), for wording only.
+            if (ChestIds.Find(chestId.Split('@')[0]) is not { } hit)
+                throw JobContext.Fail(I18n.Get("fail.chest-gone"));
+            if (hit.box.SpecialChestType == Chest.SpecialChestTypes.JunimoChest)
+                throw JobContext.Fail(I18n.Get("fail.junimo-chest"));
+            foreach (object? s in this.AskForOthersHome(ctx, hit.loc))
+                yield return s;
+            foreach (object? s in Navigation.WalkTo(ctx, hit.loc.NameOrUniqueName, null))
+                yield return s;
+            foreach (object? s in Navigation.WalkWithinMap(ctx, hit.tile, adjacent: true))
+                yield return s;
+            Actions.Face(hit.tile);
+            found(hit.box);
+            yield break;
+        }
+
         GameLocation loc = StateTools.ResolveLocation(location);
+        foreach (object? s in this.AskForOthersHome(ctx, loc))
+            yield return s;
         foreach (object? s in Navigation.WalkTo(ctx, loc.NameOrUniqueName, null))
             yield return s;
         Point me = Game1.player.TilePoint;
@@ -1001,13 +1030,13 @@ internal sealed class Macros
         if (loc.GetFridge(onlyUnlocked: true) is { } fridge && loc.GetFridgePosition() is { } fridgeTile && (allowFridge || chestTile == fridgeTile))
             chests.Add((fridgeTile, fridge));
         if (chests.Count == 0)
-            throw JobContext.Fail($"There is no chest in {loc.DisplayName}.");
+            throw JobContext.Fail(I18n.Get("fail.no-chest", new { place = loc.DisplayName }));
         (Point tile, Chest box) pick;
         if (chestTile is { } t)
         {
             pick = chests.FirstOrDefault(c => c.tile == t);
             if (pick.box == null)
-                throw JobContext.Fail("No chest or fridge at that tile.");
+                throw JobContext.Fail(I18n.Get("fail.no-chest-at-tile"));
         }
         else
         {
@@ -1020,6 +1049,21 @@ internal sealed class Macros
             yield return s;
         Actions.Face(pick.tile);
         found(pick.box);
+    }
+
+    /// <summary>Another farmer's house: their chests are theirs, so ask first (never a standing yes, not even in full self-play).</summary>
+    private IEnumerable AskForOthersHome(JobContext ctx, GameLocation loc)
+    {
+        if (!ChestIds.IsOthersHome(loc))
+            yield break;
+        bool yes = false;
+        string whose = (loc as FarmHouse)?.owner?.Name is { Length: > 0 } n ? I18n.Get("house.of", new { name = n }) : I18n.Get("house.other");
+        if (ctx.NoQuestions)
+            throw JobContext.Fail(I18n.Get("fail.others-home-no-ask", new { whose }));
+        foreach (object? s in Confirm.Ask(ctx, this.Cfg, this.helper, Permission.OthersProperty, I18n.Get("ask.others-chest", new { whose }), a => yes = a))
+            yield return s;
+        if (!yes)
+            throw JobContext.Fail(I18n.Get("fail.said-no-others-chest", new { whose }));
     }
 
     // ---------------------------------------------------------------- people
@@ -1049,13 +1093,13 @@ internal sealed class Macros
     public IEnumerable Gift(JobContext ctx, string npcName, string itemQuery)
     {
         NPC who = FindNpc(npcName);
-        string qid = StateTools.FindItemId(itemQuery) ?? throw JobContext.Fail($"No item called '{itemQuery}'.");
-        Item item = Game1.player.Items.FirstOrDefault(i => i?.QualifiedItemId == qid) ?? throw JobContext.Fail($"There is no {ItemRegistry.GetDataOrErrorItem(qid).DisplayName} in the backpack.");
+        string qid = StateTools.FindItemId(itemQuery) ?? throw JobContext.Fail(I18n.Get("fail.no-item", new { name = itemQuery }));
+        Item item = Game1.player.Items.FirstOrDefault(i => i?.QualifiedItemId == qid) ?? throw JobContext.Fail(I18n.Get("fail.not-in-backpack", new { item = ItemRegistry.GetDataOrErrorItem(qid).DisplayName }));
         bool yes = false;
-        foreach (object? s in Confirm.Ask(ctx, this.Cfg, this.helper, Permission.Gift, $"Give {item.DisplayName} to {who.displayName}?", a => yes = a))
+        foreach (object? s in Confirm.Ask(ctx, this.Cfg, this.helper, Permission.Gift, I18n.Get("ask.gift", new { item = item.DisplayName, npc = who.displayName }), a => yes = a))
             yield return s;
         if (!yes)
-            throw JobContext.Fail("The player said no to the gift.");
+            throw JobContext.Fail(I18n.Get("fail.said-no-gift"));
         foreach (object? s in this.ApproachNpc(ctx, who))
             yield return s;
         int giftsBefore = Game1.player.friendshipData.TryGetValue(who.Name, out Friendship f0) ? f0.GiftsToday : 0;
@@ -1074,7 +1118,7 @@ internal sealed class Macros
         ctx.ExpectingMenu = false;
         int giftsAfter = Game1.player.friendshipData.TryGetValue(who.Name, out Friendship f1) ? f1.GiftsToday : 0;
         if (giftsAfter <= giftsBefore)
-            throw JobContext.Fail($"{who.displayName} did not take the gift. {string.Join(" ", lines)}");
+            throw JobContext.Fail(I18n.Get("fail.gift-refused", new { npc = who.displayName, said = string.Join(" ", lines) }));
         ctx.Report["reaction"] = lines;
     }
 
@@ -1086,6 +1130,20 @@ internal sealed class Macros
         Point bed = home.GetPlayerBedSpot();
         foreach (object? s in Navigation.WalkTo(ctx, home.NameOrUniqueName, null))
             yield return s;
+
+        // Already on the bed (for example after answering "No"): the game asks again only when the farmer steps onto it anew.
+        HashSet<Point> beds = Navigation.BedTiles(home);
+        if (Game1.currentLocation == home && beds.Contains(Game1.player.TilePoint))
+        {
+            Point me = Game1.player.TilePoint;
+            Point? off = Navigation.ReachableTiles(home).Where(t => !beds.Contains(t))
+                .OrderBy(t => Math.Abs(t.X - me.X) + Math.Abs(t.Y - me.Y)).Cast<Point?>().FirstOrDefault();
+            if (off is { } step)
+            {
+                foreach (object? s in Navigation.WalkWithinMap(ctx, step, adjacent: false))
+                    yield return s;
+            }
+        }
 
         // Stepping onto the bed makes the game ask "Go to sleep for the night?", usually before the walk ends.
         ctx.ExpectingMenu = true;
@@ -1116,7 +1174,7 @@ internal sealed class Macros
         {
             Actions.CloseDialogue();
             ctx.ExpectingMenu = false;
-            throw JobContext.Fail("Reached the bed, but the game did not offer to sleep.");
+            throw JobContext.Fail(I18n.Get("fail.no-sleep"));
         }
         ctx.ExpectingMenu = false;
     }

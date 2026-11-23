@@ -21,7 +21,7 @@ internal static class Mining
 {
     public static IEnumerable Descend(JobContext ctx, ModConfig cfg, int floors)
     {
-        Pickaxe pick = Actions.FindTool<Pickaxe>() ?? throw JobContext.Fail("There is no pickaxe in the backpack.");
+        Pickaxe pick = Actions.FindTool<Pickaxe>() ?? throw JobContext.Fail(I18n.Get("fail.no-pickaxe"));
         MeleeWeapon? weapon = Game1.player.Items.OfType<MeleeWeapon>().FirstOrDefault(w => !w.isScythe());
 
         if (Game1.currentLocation is not MineShaft)
@@ -30,7 +30,7 @@ internal static class Mining
                 yield return s;
             Point? entrance = FindAction(Game1.currentLocation, a => a == "Mine" || a == "NextMineLevel");
             if (entrance is not { } door)
-                throw JobContext.Fail("Could not find the way down into the mines.");
+                throw JobContext.Fail(I18n.Get("fail.no-way-down"));
             foreach (object? s in Navigation.WalkWithinMap(ctx, door, adjacent: true))
                 yield return s;
             ctx.ExpectingMenu = true;
@@ -47,7 +47,7 @@ internal static class Mining
             }
             ctx.ExpectingMenu = false;
             if (Game1.currentLocation is not MineShaft)
-                throw JobContext.Fail("Could not enter the mines.");
+                throw JobContext.Fail(I18n.Get("fail.cannot-enter-mines"));
         }
 
         int startLevel = ((MineShaft)Game1.currentLocation).mineLevel;

@@ -27,6 +27,8 @@ public sealed class ModEntry : Mod
     private MemoryStore? memory;
     private AgentLauncher? launcher;
     private ApprenticeService? apprentice;
+    private RoutineService? routines;
+    private RoutineScheduler? scheduler;
     private readonly SelfPlay selfPlay = new();
     private bool autoLoadDone;
     private int lastBusyScreenTick;
@@ -42,6 +44,7 @@ public sealed class ModEntry : Mod
 
     public override void Entry(IModHelper helper)
     {
+        I18n.Lookup = (key, tokens) => helper.Translation.Get(key, tokens).ToString();
         this.config = helper.ReadConfig<ModConfig>();
         if (string.IsNullOrWhiteSpace(this.config.Token))
         {
@@ -66,15 +69,29 @@ public sealed class ModEntry : Mod
         ActionTools.Register(this.tools, this.runner, new Macros(() => this.config, helper));
         this.memory = new MemoryStore(helper.DirectoryPath, this.Monitor);
         this.apprentice = new ApprenticeService(this.memory, () => this.config, this.Monitor, this.runner, this.selfPlay);
-        MemoryTools.Register(this.tools, this.memory, this.selfPlay, () => this.config, (on, goal) => this.SetSelfPlay(on, goal), this.apprentice.SeedLines);
+        this.routines = new RoutineService(this.memory, () => this.config, helper, this.Monitor, this.runner, this.selfPlay, this.apprentice.Watcher);
+        this.scheduler = new RoutineScheduler(this.routines, this.memory, () => this.config, helper, this.Monitor, this.runner, this.selfPlay, this.apprentice.Watcher,
+            ran => this.bridge?.Broadcast("routines/ran", ran));
+        DayBriefing.RoutinesToday = this.scheduler.Today;
+        MemoryTools.Register(this.tools, this.memory, this.selfPlay, () => this.config, (on, goal) => this.SetSelfPlay(on, goal), this.apprentice.SeedLines, this.routines.SeedNames);
         this.tools.Add(DayBriefing.Tool(this.memory, () => this.config, this.apprentice));
         this.apprentice.Register(this.tools);
+        this.routines.Register(this.tools);
+        this.runner.Started += _ => this.apprentice.Watcher.OnJobStarted();
+        // Each step of a routine counts as its own job for the self-play log and the watcher.
+        this.runner.StepFinished += (name, result) =>
+        {
+            this.selfPlay.LogJob(name, result);
+            this.apprentice.Watcher.OnJobFinished(name, result);
+        };
         this.runner.Finished += (name, result) =>
         {
             this.selfPlay.LogJob(name, result);
             this.apprentice.Watcher.OnJobFinished(name, result);
+            this.routines.OnJobFinished(name, result);
+            this.scheduler.OnJobFinished(name, result);
             if (name == "go_to_bed (end of day)")
-                ChatLog.Add(ChatSender.System, result.Outcome == JobOutcome.Done ? "It's late, so the autopilot put the farmer to bed." : $"Tried to go to bed: {result.Summary}");
+                ChatLog.Add(ChatSender.System, result.Outcome == JobOutcome.Done ? I18n.Get("bed.done") : I18n.Get("bed.failed", new { why = result.Summary }));
         };
         this.tips = new TipEngine(() => this.config, this.DeliverTip, this.ShowWarning);
 
@@ -91,7 +108,7 @@ public sealed class ModEntry : Mod
         {
             this.Notify("save_loaded");
             if (!AgentState.Connected && WrapperStatus.Current.State is "needs_setup" or "error")
-                Toast.Show(new ChatEntry(ChatSender.System, WrapperStatus.NotConnectedHint() + " (F8 opens the chat)", DateTime.Now));
+                Toast.Show(new ChatEntry(ChatSender.System, I18n.Get("copilot.hint-with-key", new { hint = WrapperStatus.NotConnectedHint(), key = this.config.ChatKey }), DateTime.Now));
         };
         helper.ConsoleCommands.Add("pilot_diagnose", "Print a self-check of StardewPilot (versions, Node, pi, wrapper, bridge) to paste into a bug report. Contains no keys, tokens or links.", (_, _) =>
             this.Monitor.Log("\n" + Platform.Diagnostics.Build(new Platform.DiagnoseInfo(
@@ -113,6 +130,7 @@ public sealed class ModEntry : Mod
             this.tips.OnDayStarted();
             Navigation.ResetBlockedExits();
             this.selfPlay.OnDayStarted();
+            this.scheduler!.OnDayStarted();
             this.PrepareBriefing();
             this.apprentice!.StartDay();
             this.Notify("day_started", new { season = Game1.currentSeason, day = Game1.dayOfMonth, year = Game1.year, selfPlay = this.selfPlay.Enabled });
@@ -121,6 +139,7 @@ public sealed class ModEntry : Mod
         {
             this.Monitor.Log($"Time changed to {e.NewTime}.", LogLevel.Trace);
             this.tips.OnTimeChanged(e.NewTime);
+            this.scheduler!.OnTimeChanged();
         };
         helper.Events.GameLoop.DayEnding += (_, _) => this.WriteFallbackSummary(this.apprentice!.EndDay());
         helper.Events.GameLoop.Saved += (_, _) =>
@@ -130,10 +149,10 @@ public sealed class ModEntry : Mod
         };
         helper.Events.GameLoop.ReturnedToTitle += (_, _) =>
         {
-            this.runner.Stop(JobOutcome.Failed, "Returned to the title screen.");
+            this.runner.Stop(JobOutcome.Failed, I18n.Get("stop.title-screen"), StopCause.Screen);
             this.apprentice!.Watcher.Reset();
             this.memory.Discard();
-            this.selfPlay.Stop("The game returned to the title screen.");
+            this.selfPlay.Stop(I18n.Get("stop.title-screen"));
             ChatLog.Clear();
             this.pendingTips.Clear();
             this.briefingDue = false;
@@ -146,7 +165,12 @@ public sealed class ModEntry : Mod
         };
         helper.Events.Player.Warped += (_, e) => this.apprentice!.Watcher.OnWarped(e);
         helper.Events.Input.ButtonPressed += this.OnButtonPressed;
-        helper.Events.Display.RenderedHud += (_, e) => Toast.Draw(e.SpriteBatch);
+        helper.Events.Display.RenderedHud += (_, e) =>
+        {
+            Toast.Draw(e.SpriteBatch);
+            this.routines?.DrawLessonLine(e.SpriteBatch);
+            this.scheduler?.Draw(e.SpriteBatch);
+        };
         helper.Events.Content.LocaleChanged += (_, _) => StateTools.ResetNameIndex();
     }
 
@@ -217,6 +241,7 @@ public sealed class ModEntry : Mod
             this.runner!.Update();
             this.EnforceEndOfDay();
             this.apprentice!.Watcher.Tick();
+            this.scheduler!.Tick();
 
             // Single-player: hold the clock while the agent thinks (not while autopilot jobs run). Co-op cannot pause freely.
             bool hold = this.config.Dev.FreezeTime || (this.config.PauseWhileThinking && AgentState.Busy && !this.runner.IsRunning && !Context.IsMultiplayer);
@@ -249,7 +274,13 @@ public sealed class ModEntry : Mod
             return;
         if (Game1.timeOfDay < this.config.Autopilot.StopWorkAt)
             return;
-        this.runner.Stop(JobOutcome.Partial, "It's late, so the autopilot stopped work and is taking the farmer to bed.");
+        // A routine started by its schedule only stops: nobody asked for it just then, so nobody asked to end the day.
+        if (this.scheduler!.ScheduledRunning)
+        {
+            this.runner.Stop(JobOutcome.Partial, I18n.Get("stop.late"), StopCause.EndOfDay);
+            return;
+        }
+        this.runner.Stop(JobOutcome.Partial, I18n.Get("stop.late-bed"), StopCause.EndOfDay);
         var macros = new Macros(() => this.config, this.Helper);
         _ = this.runner.Start("go_to_bed (end of day)", ctx => macros.GoToBed(ctx));
     }
@@ -276,6 +307,13 @@ public sealed class ModEntry : Mod
         if (!Context.IsWorldReady)
             return;
         this.apprentice!.Watcher.OnButtonPressed(e);
+        this.scheduler!.OnButtonPressed(e.Button);
+
+        if (e.Button == this.config.Routines.StartKey && Game1.activeClickableMenu == null && this.scheduler.OnStartKey())
+        {
+            this.Helper.Input.Suppress(e.Button);
+            return;
+        }
 
         if (e.Button == this.config.SelfPlay.ToggleKey)
         {
@@ -288,19 +326,19 @@ public sealed class ModEntry : Mod
             this.runner!.Enabled = !this.runner.Enabled;
             if (!this.runner.Enabled)
             {
-                this.runner.Stop(JobOutcome.Partial, "The player switched the autopilot off.");
+                this.runner.Stop(JobOutcome.Partial, I18n.Get("stop.autopilot-off"), StopCause.Player);
                 if (this.selfPlay.Enabled)
-                    this.SetSelfPlay(false, null, "The player switched the autopilot off.");
+                    this.SetSelfPlay(false, null, I18n.Get("stop.autopilot-off"));
             }
-            Game1.addHUDMessage(new HUDMessage($"StardewPilot autopilot {(this.runner.Enabled ? "on" : "off")}"));
+            Game1.addHUDMessage(new HUDMessage(I18n.Get(this.runner.Enabled ? "hud.autopilot-on" : "hud.autopilot-off")));
             this.Helper.Input.Suppress(e.Button);
             return;
         }
         if ((this.runner!.IsRunning || this.selfPlay.Enabled) && IsTakeControlInput(e.Button))
         {
-            this.runner.Stop(JobOutcome.Partial, "The player took control, so the autopilot stopped.");
+            this.runner.Stop(JobOutcome.Partial, I18n.Get("stop.player"), StopCause.Player);
             if (this.selfPlay.Enabled)
-                this.SetSelfPlay(false, null, "The player took control. Press F10 to let the copilot play again.");
+                this.SetSelfPlay(false, null, I18n.Get("selfplay.player-took-over", new { key = this.config.SelfPlay.ToggleKey }));
             return;
         }
 
@@ -329,7 +367,7 @@ public sealed class ModEntry : Mod
         if (System.Text.RegularExpressions.Regex.IsMatch(text.Trim(), @"^/forget\s+habits$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
         {
             int removed = this.apprentice!.Forget();
-            ChatLog.Add(ChatSender.System, $"Deleted the activity diary ({removed} saved days) and the habits for this farm. Watching {(this.config.Apprentice.Enabled ? "starts again from now" : "is switched off")}.");
+            ChatLog.Add(ChatSender.System, I18n.Get(this.config.Apprentice.Enabled ? "apprentice.forgot" : "apprentice.forgot-off", new { days = removed }));
             return;
         }
         ChatLog.Add(ChatSender.Player, text);
@@ -442,13 +480,13 @@ public sealed class ModEntry : Mod
         this.memory.MarkBriefingShown();
         this.apprentice?.BriefingShown(this.selfPlay.Enabled);
         this.Monitor.Log($"Morning briefing shown as fixed text: {string.Join(" | ", lines)}", LogLevel.Debug);
-        ChatLog.Add(ChatSender.Tip, "Good morning! " + string.Join("\n", lines));
+        ChatLog.Add(ChatSender.Tip, I18n.Get("briefing.good-morning") + " " + string.Join("\n", lines));
     }
 
     /// <summary>The first message of the agent's day session: memory, and today's briefing when it is due.</summary>
     private object DaySeed()
     {
-        JObject seed = JObject.FromObject(MemoryTools.Snapshot(this.memory!, this.selfPlay, this.config, this.apprentice!.SeedLines()));
+        JObject seed = JObject.FromObject(MemoryTools.Snapshot(this.memory!, this.selfPlay, this.config, this.apprentice!.SeedLines(), this.routines!.SeedNames()));
         if (this.briefingDue)
         {
             var (facts, lines) = DayBriefing.Build(this.memory!, this.config, this.apprentice!, morning: true, selfPlay: this.selfPlay.Enabled);
@@ -481,22 +519,22 @@ public sealed class ModEntry : Mod
         {
             if (!this.runner!.Enabled)
             {
-                ChatLog.Add(ChatSender.System, "Self-play needs the autopilot on (F9).");
+                ChatLog.Add(ChatSender.System, I18n.Get("selfplay.needs-autopilot", new { key = this.config.Autopilot.ToggleKey }));
                 return;
             }
             if (!AgentState.Connected)
             {
-                ChatLog.Add(ChatSender.System, "Self-play needs the copilot. " + WrapperStatus.NotConnectedHint());
+                ChatLog.Add(ChatSender.System, I18n.Get("selfplay.needs-copilot", new { hint = WrapperStatus.NotConnectedHint() }));
                 return;
             }
             this.selfPlay.Start();
             string g = this.memory!.Goal;
-            ChatLog.Add(ChatSender.System, $"Self-play on. Goal: {(g.Length > 0 ? g : "the default first-year plan")}. Move or press F10 to take over.");
+            ChatLog.Add(ChatSender.System, I18n.Get("selfplay.on", new { goal = g.Length > 0 ? g : I18n.Get("selfplay.default-goal"), key = this.config.SelfPlay.ToggleKey }));
         }
         else if (this.selfPlay.Enabled)
         {
-            this.selfPlay.Stop(reason ?? "Stopped.");
-            ChatLog.Add(ChatSender.System, $"Self-play off. {reason}".Trim());
+            this.selfPlay.Stop(reason ?? I18n.Get("selfplay.stopped"));
+            ChatLog.Add(ChatSender.System, (I18n.Get("selfplay.off") + " " + reason).Trim());
         }
         this.bridge?.Broadcast("selfplay/changed", new { enabled = this.selfPlay.Enabled, goal = this.memory!.Goal, reason });
     }
@@ -510,8 +548,8 @@ public sealed class ModEntry : Mod
             return new { go = false, reason = this.selfPlay.StopReason };
         if (this.selfPlay.BudgetExhausted(this.config))
         {
-            string why = $"Today's model budget is used up ({this.selfPlay.RequestsToday} requests).";
-            this.SetSelfPlay(false, null, why + " Self-play resumes when you press F10.");
+            string why = I18n.Get("selfplay.budget", new { count = this.selfPlay.RequestsToday });
+            this.SetSelfPlay(false, null, why + " " + I18n.Get("selfplay.resume", new { key = this.config.SelfPlay.ToggleKey }));
             if (Game1.timeOfDay >= 2000 && !this.runner!.IsRunning)
             {
                 var macros = new Macros(() => this.config, this.Helper);

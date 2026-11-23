@@ -45,9 +45,7 @@ internal sealed class ApprenticeService
         this.Watcher.StartDay();
         if (this.Enabled && !this.memory.ApprenticeNoticeShown())
         {
-            ChatLog.Add(ChatSender.System,
-                "New: the copilot keeps a diary of what you do in the game, to learn your habits (such as your usual morning). " +
-                "It stays in the mod's data folder. Type /forget habits to delete it, or set Apprentice.Enabled to false in config.json to switch it off.");
+            ChatLog.Add(ChatSender.System, I18n.Get("apprentice.notice"));
             this.memory.MarkApprenticeNotice();
         }
     }
@@ -169,26 +167,27 @@ internal sealed class ApprenticeService
 
     // ------------------------------------------------------------ names
 
+    /// <summary>Maps whose game name does not read well in a sentence: the key of their name in the i18n files.</summary>
     private static readonly Dictionary<string, string> MapNames = new()
     {
-        ["Mines"] = "The Mines",
-        ["SkullCave"] = "Skull Cavern",
-        ["Volcano"] = "Volcano Dungeon",
+        ["Mines"] = "map.mines",
+        ["SkullCave"] = "map.skull-cavern",
+        ["Volcano"] = "map.volcano",
     };
 
     private static readonly Dictionary<string, string> ShopNames = new()
     {
-        ["SeedShop"] = "Pierre's General Store",
-        ["Joja"] = "JojaMart",
-        ["FishShop"] = "Willy's Fish Shop",
-        ["AnimalShop"] = "Marnie's Ranch",
-        ["Blacksmith"] = "the Blacksmith",
-        ["Saloon"] = "The Stardrop Saloon",
-        ["Carpenter"] = "the Carpenter's Shop",
-        ["Hospital"] = "Harvey's Clinic",
-        ["Sandy"] = "the Oasis",
-        ["Traveler"] = "the Traveling Cart",
-        ["AdventureShop"] = "the Adventurer's Guild",
+        ["SeedShop"] = "shop.seed-shop",
+        ["Joja"] = "shop.joja",
+        ["FishShop"] = "shop.fish-shop",
+        ["AnimalShop"] = "shop.animal-shop",
+        ["Blacksmith"] = "shop.blacksmith",
+        ["Saloon"] = "shop.saloon",
+        ["Carpenter"] = "shop.carpenter",
+        ["Hospital"] = "shop.hospital",
+        ["Sandy"] = "shop.sandy",
+        ["Traveler"] = "shop.traveler",
+        ["AdventureShop"] = "shop.adventure",
     };
 
     /// <summary>Names in the game's current language. Text from the game is cleaned when shown (one line, at most 40 characters).</summary>
@@ -197,20 +196,20 @@ internal sealed class ApprenticeService
         Item = id => ItemRegistry.GetDataOrErrorItem(id).DisplayName,
         Map = MapName,
         Npc = id => Game1.getCharacterFromName(id)?.displayName ?? id,
-        Shop = id => ShopNames.TryGetValue(id, out string? n) ? n : id,
+        Shop = id => ShopNames.TryGetValue(id, out string? key) ? I18n.Get(key) : id,
     };
 
     /// <summary>A map's name for a log line. The farm and its buildings show the farm's name, so they get plain words.</summary>
     private static string MapName(string id)
     {
         if (MapNames.TryGetValue(id, out string? special))
-            return special;
+            return I18n.Get(special);
         return Game1.getLocationFromName(id) switch
         {
-            Farm => "the farm",
-            StardewValley.Locations.FarmHouse home when home == Utility.getHomeOfFarmer(Game1.player) => "the farmhouse",
-            StardewValley.Locations.Cabin => "a cabin",
-            StardewValley.Locations.FarmHouse => "the farmhouse",
+            Farm => I18n.Get("map.farm"),
+            StardewValley.Locations.FarmHouse home when home == Utility.getHomeOfFarmer(Game1.player) => I18n.Get("map.farmhouse"),
+            StardewValley.Locations.Cabin => I18n.Get("map.cabin"),
+            StardewValley.Locations.FarmHouse => I18n.Get("map.farmhouse"),
             { ParentBuilding: { } building } => AnimalTools.BuildingName(building),
             { } loc => loc.DisplayName,
             null => id,

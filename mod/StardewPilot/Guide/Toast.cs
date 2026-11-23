@@ -19,6 +19,13 @@ internal static class Toast
         shownAt = Game1.currentGameTime?.TotalGameTime.TotalSeconds ?? 0;
     }
 
+    /// <summary>
+    /// Wrap a line drawn in the top left so it stays clear of the game's clock and date box in the top right (about
+    /// 300 pixels wide). Translations run longer than English.
+    /// </summary>
+    public static string WrapClearOfClock(string text) =>
+        Game1.parseText(text, Game1.smallFont, Math.Max(300, Game1.uiViewport.Width - 32 - 360));
+
     public static void Draw(SpriteBatch b)
     {
         if (current == null || Game1.activeClickableMenu is ChatOverlayMenu)
@@ -33,9 +40,9 @@ internal static class Toast
         int width = Math.Min(560, Game1.uiViewport.Width / 2);
         string label = current.Sender switch
         {
-            ChatSender.Warning => "Warning: ",
-            ChatSender.Tip => "Tip: ",
-            _ => "Pilot: ",
+            ChatSender.Warning => I18n.Get("chat.warning"),
+            ChatSender.Tip => I18n.Get("chat.tip"),
+            _ => I18n.Get("chat.pilot"),
         };
         string text = Game1.parseText(label + current.Text, Game1.smallFont, width - 48);
         string[] lines = text.Split('\n');

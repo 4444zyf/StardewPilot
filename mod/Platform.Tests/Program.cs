@@ -235,7 +235,14 @@ Test("pilot_diagnose: no token, key or settings link in the report", () =>
     }
 });
 
+I18nTests.UseEnglish();
+foreach (var (name, run) in I18nTests.All())
+    Test(name, run);
 foreach (var (name, run) in ApprenticeTests.All())
+    Test(name, run);
+foreach (var (name, run) in LessonTests.All())
+    Test(name, run);
+foreach (var (name, run) in ScheduleTests.All())
     Test(name, run);
 
 int failed = 0;

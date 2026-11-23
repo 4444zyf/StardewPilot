@@ -45,6 +45,9 @@ public sealed class ModConfig
     /// <summary>Watching what the player does to learn their habits.</summary>
     public ApprenticeConfig Apprentice { get; set; } = new();
 
+    /// <summary>Routines with a schedule: offered when due, and a morning routine can start by itself.</summary>
+    public RoutinesConfig Routines { get; set; } = new();
+
     /// <summary>One-click start: launch the pi agent together with the game.</summary>
     public LauncherConfig Launcher { get; set; } = new();
 
@@ -56,6 +59,18 @@ public sealed class ApprenticeConfig
 {
     /// <summary>Keep a diary of what the player does and learn their habits. Files stay in the mod's data folder.</summary>
     public bool Enabled { get; set; } = true;
+}
+
+public sealed class RoutinesConfig
+{
+    /// <summary>
+    /// Routines with a schedule are offered when due, and a 6am routine set to "by itself" starts when the player has touched nothing since waking.
+    /// Off: no offers and no starts (schedules stay saved). Every schedule was approved by the player in the game.
+    /// </summary>
+    public bool StartThemselves { get; set; } = true;
+
+    /// <summary>Key (or controller button) that starts the routine on offer.</summary>
+    public SButton StartKey { get; set; } = SButton.F7;
 }
 
 public sealed class LauncherConfig

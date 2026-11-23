@@ -42,11 +42,11 @@ internal static class WrapperStatus
         WrapperStatusInfo s = Current;
         return s.State switch
         {
-            "needs_setup" => "The copilot needs setting up: type /settings to open the settings page.",
-            "starting" => "The copilot is starting. Try again in a moment.",
-            "running" => "The copilot is connecting. Try again in a moment.",
-            "error" => $"The copilot stopped: {s.Message} Type /settings to check its settings.",
-            _ => "The copilot is not running. Set Launcher.Enabled to true in the mod's config.json, or start pi with the StardewPilot extension.",
+            "needs_setup" => I18n.Get("copilot.needs-setup"),
+            "starting" => I18n.Get("copilot.starting"),
+            "running" => I18n.Get("copilot.connecting"),
+            "error" => I18n.Get("copilot.error", new { message = s.Message }),
+            _ => I18n.Get("copilot.not-running"),
         };
     }
 
@@ -56,11 +56,11 @@ internal static class WrapperStatus
         lastCheck = DateTime.MinValue; // read fresh
         WrapperStatusInfo s = Current;
         if (s.SettingsUrl.Length == 0)
-            return "The settings page is served by the copilot wrapper, which is not running. Set Launcher.Enabled to true in config.json and restart the game, or run: node <mod folder>/agent/src/wrapper/main.ts setup";
+            return I18n.Get("copilot.settings-no-wrapper");
         string? error = Browser.Open(s.SettingsUrl);
         if (error == null)
-            return "Opened the copilot settings in your browser.";
+            return I18n.Get("copilot.settings-opened");
         monitor.Log($"Could not open the browser: {error}", LogLevel.Warn);
-        return $"Could not open a browser. The link is in {FilePath} (keep it private).";
+        return I18n.Get("copilot.settings-no-browser", new { file = FilePath });
     }
 }

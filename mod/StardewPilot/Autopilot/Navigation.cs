@@ -56,12 +56,15 @@ internal static class Navigation
         return exits;
     }
 
+    /// <summary>A map's name for the player: its display name when it is loaded, else its id.</summary>
+    private static string PlaceName(string id) => Game1.getLocationFromName(id)?.DisplayName ?? id;
+
     /// <summary>A reason for a failed route, for the job's message.</summary>
     private static string WhyNoRoute(string target)
     {
         GameLocation? loc = Game1.getLocationFromName(target);
         if (loc == null)
-            return "That map is not loaded in this game (a co-op guest's game has only some maps).";
+            return I18n.Get("route.not-loaded");
         Building? b = loc.ParentBuilding;
         Utility.ForEachBuilding(x =>
         {
@@ -72,15 +75,15 @@ internal static class Navigation
         if (b != null)
         {
             if (b.isUnderConstruction())
-                return "Its building is still being built.";
+                return I18n.Get("route.under-construction");
             if (b.humanDoor.Value.X < 0)
-                return "Its building has no door.";
+                return I18n.Get("route.no-door");
             GameLocation? outside = b.GetParentLocation();
             if (outside != null && ExitsOf(outside).FirstOrDefault(e => e.To.Equals(target, StringComparison.OrdinalIgnoreCase)) is { } door
                 && BlockedExits.Contains(Key(door)))
-                return $"The way to its door at {door.Tile.X},{door.Tile.Y} is blocked.";
+                return I18n.Get("route.door-blocked", new { tile = $"{door.Tile.X},{door.Tile.Y}" });
         }
-        return "It may be locked or not open yet.";
+        return I18n.Get("route.locked");
     }
 
     /// <summary>Cheapest route (by estimated walking distance) from the farmer to a map, as a list of exits to use.</summary>
@@ -125,7 +128,7 @@ internal static class Navigation
             string here = Game1.currentLocation.NameOrUniqueName;
             if (here.Equals(location, StringComparison.OrdinalIgnoreCase))
                 break;
-            List<Exit> route = PlanRoute(location) ?? throw JobContext.Fail($"No known way from {Game1.currentLocation.DisplayName} to {location}. {WhyNoRoute(location)}");
+            List<Exit> route = PlanRoute(location) ?? throw JobContext.Fail(I18n.Get("fail.no-route", new { from = Game1.currentLocation.DisplayName, to = PlaceName(location), why = WhyNoRoute(location) }));
             Exit hop = route[0];
             ctx.Progress($"walking to {location} (via {hop.To})");
             bool ok = false;
@@ -135,7 +138,7 @@ internal static class Navigation
             {
                 bool more;
                 try { more = exit.MoveNext(); }
-                catch (JobStop stop) when (stop.Message.StartsWith("No path") || stop.Message.StartsWith("Could not get"))
+                catch (JobStop stop) when (stop.NoPath)
                 {
                     why = stop.Message;
                     break;
@@ -150,7 +153,7 @@ internal static class Navigation
             }
         }
         if (!Game1.currentLocation.NameOrUniqueName.Equals(location, StringComparison.OrdinalIgnoreCase))
-            throw JobContext.Fail($"Could not reach {location}: every route was blocked.");
+            throw JobContext.Fail(I18n.Get("fail.all-routes-blocked", new { to = PlaceName(location) }));
 
         if (tile is { } target)
         {
@@ -172,10 +175,27 @@ internal static class Navigation
                 ? (node, end, _, _) => Math.Abs(node.x - end.X) + Math.Abs(node.y - end.Y) == 1
                 : PathFindController.isAtEndPoint;
             Stack<Point>? path = PathFindController.findPath(Game1.player.TilePoint, target, endTest, loc, Game1.player, 30000);
+
+            // The game's pathfinder walks over beds, and stepping on a bed makes the game ask "Go to sleep for the night?",
+            // which stops the job. Go around beds unless the bed is where the walk ends (going to bed).
+            HashSet<Point> beds = BedTiles(loc);
+            beds.Remove(target);
+            if (path != null && beds.Count > 0 && path.Any(beds.Contains))
+            {
+                List<Point>? around = PathThroughDebris(loc, Game1.player.TilePoint, target, adjacent, beds);
+                if (around != null)
+                {
+                    ctx.Log($"path to ({target.X},{target.Y}) crossed a bed; going around it");
+                    foreach (object? step in WalkClearing(ctx, loc, around))
+                        yield return step;
+                    continue;
+                }
+            }
+
             if (path == null)
             {
                 // Blocked by weeds, stones or twigs? Walk through them, clearing them with tools like a player would.
-                List<Point>? clearing = PathThroughDebris(loc, Game1.player.TilePoint, target, adjacent);
+                List<Point>? clearing = PathThroughDebris(loc, Game1.player.TilePoint, target, adjacent, beds);
                 if (clearing == null && attempt < 2 && (loc.animals.Length > 0 || loc.characters.Count > 0))
                 {
                     // An animal or villager may be standing in a doorway; they move on, so wait and look again.
@@ -188,7 +208,7 @@ internal static class Navigation
                     continue;
                 }
                 if (clearing == null)
-                    throw JobContext.Fail($"No path to tile ({target.X}, {target.Y}) in {loc.DisplayName}.");
+                    throw JobContext.NoPath(I18n.Get("fail.no-path", new { tile = $"{target.X},{target.Y}", place = loc.DisplayName }));
                 foreach (object? step in WalkClearing(ctx, loc, clearing))
                     yield return step;
                 continue;
@@ -219,7 +239,21 @@ internal static class Navigation
                 yield break; // walked through an exit; the caller decides what next
         }
         if (!IsAt(target, adjacent))
-            throw JobContext.Fail($"Could not get {(adjacent ? "next to" : "to")} tile ({target.X}, {target.Y}) in {loc.DisplayName}: the way is blocked.");
+            throw JobContext.NoPath(I18n.Get(adjacent ? "fail.blocked-next-to" : "fail.blocked-to", new { tile = $"{target.X},{target.Y}", place = loc.DisplayName }));
+    }
+
+    /// <summary>The tiles beds cover on a map: walking onto one makes the game offer to sleep.</summary>
+    public static HashSet<Point> BedTiles(GameLocation loc)
+    {
+        var tiles = new HashSet<Point>();
+        foreach (StardewValley.Objects.BedFurniture bed in loc.furniture.OfType<StardewValley.Objects.BedFurniture>())
+        {
+            Rectangle box = bed.GetBoundingBox();
+            for (int x = box.Left / 64; x <= (box.Right - 1) / 64; x++)
+                for (int y = box.Top / 64; y <= (box.Bottom - 1) / 64; y++)
+                    tiles.Add(new Point(x, y));
+        }
+        return tiles;
     }
 
     /// <summary>Debris a player can clear with starting tools: weeds (scythe), stones (pickaxe), twigs (axe).</summary>
@@ -252,7 +286,7 @@ internal static class Navigation
     }
 
     /// <summary>A* where clearable debris is passable at extra cost. Returns the tiles to walk, start excluded.</summary>
-    public static List<Point>? PathThroughDebris(GameLocation loc, Point start, Point target, bool adjacent)
+    public static List<Point>? PathThroughDebris(GameLocation loc, Point start, Point target, bool adjacent, HashSet<Point>? avoid = null)
     {
         int w = loc.Map.Layers[0].LayerWidth, h = loc.Map.Layers[0].LayerHeight;
         const int DebrisCost = 8;
@@ -279,6 +313,8 @@ internal static class Navigation
                 bool isTarget = next == target;
                 bool inBounds = next.X >= 0 && next.Y >= 0 && next.X < w && next.Y < h;
                 if (!inBounds && !isTarget)
+                    continue;
+                if (avoid != null && !isTarget && avoid.Contains(next))
                     continue;
                 int step;
                 if (!inBounds || IsWalkable(loc, next)) step = 1;
@@ -334,14 +370,14 @@ internal static class Navigation
                 : obj.IsBreakableStone() ? Actions.FindTool<StardewValley.Tools.Pickaxe>()
                 : Actions.FindTool<StardewValley.Tools.Axe>();
             if (tool == null)
-                throw JobContext.Fail($"The way is blocked by {obj.DisplayName} and the right tool is not in the backpack.");
+                throw JobContext.Fail(I18n.Get("fail.debris-no-tool", new { thing = obj.DisplayName }));
             for (int k = 0; k < 6 && IsClearableDebris(loc, debris); k++)
             {
                 foreach (object? s in Actions.UseTool(ctx, Config(), tool, debris))
                     yield return s;
             }
             if (IsClearableDebris(loc, debris))
-                throw JobContext.Fail($"Could not clear the {obj.DisplayName} at ({debris.X}, {debris.Y}).");
+                throw JobContext.Fail(I18n.Get("fail.debris-stuck", new { thing = obj.DisplayName, tile = $"{debris.X},{debris.Y}" }));
             i = j;
         }
     }
@@ -400,7 +436,7 @@ internal static class Navigation
                 box.closeDialogue();
                 Game1.exitActiveMenu();
                 ctx.ExpectingMenu = false;
-                throw JobContext.Fail($"Could not enter {exit.To}: {why}");
+                throw JobContext.Fail(I18n.Get("fail.cannot-enter", new { place = PlaceName(exit.To), why }));
             }
             ctx.ExpectingMenu = false;
         }

@@ -20,16 +20,16 @@ internal static class Fishing
 {
     public static IEnumerable Fish(JobContext ctx, ModConfig cfg, string? location, int catches)
     {
-        FishingRod rod = Actions.FindTool<FishingRod>() ?? throw JobContext.Fail("There is no fishing rod in the backpack.");
+        FishingRod rod = Actions.FindTool<FishingRod>() ?? throw JobContext.Fail(I18n.Get("fail.no-rod"));
         GameLocation loc = StateTools.ResolveLocation(location);
         foreach (object? s in Navigation.WalkTo(ctx, loc.NameOrUniqueName, null))
             yield return s;
         if (!loc.canFishHere())
-            throw JobContext.Fail($"You can't fish in {loc.DisplayName}.");
+            throw JobContext.Fail(I18n.Get("fail.cannot-fish", new { place = loc.DisplayName }));
 
         List<(Point stand, int dir)> spots = FindSpots(loc);
         if (spots.Count == 0)
-            throw JobContext.Fail($"No open water to fish from in {loc.DisplayName} ({DebugInfo}).");
+            throw JobContext.Fail(I18n.Get("fail.no-water", new { place = loc.DisplayName }) + $" ({DebugInfo})");
         ctx.Log($"fishing spots: {string.Join(", ", spots.Take(5).Select(sp => $"({sp.stand.X},{sp.stand.Y}) dir {sp.dir}"))}");
 
         var caught = new List<string>();

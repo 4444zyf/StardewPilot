@@ -223,6 +223,40 @@ internal sealed class MemoryStore
         }
     }
 
+    // ------------------------------------------------------------ routines
+
+    private string RoutinesPath => Path.Combine(this.FarmFolder, "routines.json");
+
+    /// <summary>
+    /// The player's routines (teach by showing). Written at once, not at the nightly save: a routine is the player's decision,
+    /// not game state, and the nightly save must never overwrite a hand edit. Null when there is no file.
+    /// </summary>
+    public string? RoutinesText => File.Exists(this.RoutinesPath) ? File.ReadAllText(this.RoutinesPath) : null;
+
+    public void WriteRoutines(string json)
+    {
+        Directory.CreateDirectory(this.FarmFolder);
+        string temp = this.RoutinesPath + ".tmp";
+        File.WriteAllText(temp, json);
+        File.Move(temp, this.RoutinesPath, overwrite: true);
+    }
+
+    /// <summary>When routines.json was last written (by the mod or by hand); null when there is none.</summary>
+    public DateTime? RoutinesWriteTime => File.Exists(this.RoutinesPath) ? File.GetLastWriteTimeUtc(this.RoutinesPath) : null;
+
+    private string RunsPath => Path.Combine(this.FarmFolder, "routine-runs.json");
+
+    /// <summary>How scheduled routines last ended (today's runs are kept on the player's home). Written at once, like the routines.</summary>
+    public string? RoutineRunsText => File.Exists(this.RunsPath) ? File.ReadAllText(this.RunsPath) : null;
+
+    public void WriteRoutineRuns(string json)
+    {
+        Directory.CreateDirectory(this.FarmFolder);
+        string temp = this.RunsPath + ".tmp";
+        File.WriteAllText(temp, json);
+        File.Move(temp, this.RunsPath, overwrite: true);
+    }
+
     /// <summary>The game saved: commit pending memory to disk.</summary>
     public void Commit()
     {

@@ -106,10 +106,10 @@ internal sealed class ChatOverlayMenu : IClickableMenu
         {
             (string label, Color color) = entry.Sender switch
             {
-                ChatSender.Player => ("You: ", new Color(40, 70, 140)),
-                ChatSender.Agent => ("Pilot: ", Game1.textColor),
-                ChatSender.Tip => ("Tip: ", new Color(30, 110, 40)),
-                ChatSender.Warning => ("Warning: ", new Color(170, 30, 30)),
+                ChatSender.Player => (I18n.Get("chat.you"), new Color(40, 70, 140)),
+                ChatSender.Agent => (I18n.Get("chat.pilot"), Game1.textColor),
+                ChatSender.Tip => (I18n.Get("chat.tip"), new Color(30, 110, 40)),
+                ChatSender.Warning => (I18n.Get("chat.warning"), new Color(170, 30, 30)),
                 _ => ("", Color.DimGray),
             };
             foreach (string line in Game1.parseText(label + entry.Text, Game1.smallFont, textWidth).Split('\n'))
@@ -126,14 +126,14 @@ internal sealed class ChatOverlayMenu : IClickableMenu
             b.DrawString(Game1.smallFont, lines[i].text, new Vector2(left, y), lines[i].color);
 
         if (ChatLog.All.Count == 0)
-            b.DrawString(Game1.smallFont, Game1.parseText("Ask anything about your farm, for example: What should I do today?", Game1.smallFont, textWidth), new Vector2(left, top), Color.DimGray);
+            b.DrawString(Game1.smallFont, Game1.parseText(I18n.Get("chat.empty"), Game1.smallFont, textWidth), new Vector2(left, top), Color.DimGray);
 
         // Status line above the input.
         string status = !AgentState.Connected
             ? StardewPilot.Bridge.WrapperStatus.NotConnectedHint()
             : AgentState.Busy
-                ? "Thinking" + new string('.', (int)(Game1.currentGameTime.TotalGameTime.TotalSeconds * 2 % 4)) + (AgentState.Activity.Length > 0 ? $"  ({AgentState.Activity})" : "")
-                : "Enter: send. Esc: close. /settings: copilot settings. Only you see this chat.";
+                ? I18n.Get("chat.thinking") + new string('.', (int)(Game1.currentGameTime.TotalGameTime.TotalSeconds * 2 % 4)) + (AgentState.Activity.Length > 0 ? $"  ({AgentState.Activity})" : "")
+                : I18n.Get("chat.help");
         status = Game1.parseText(status, Game1.smallFont, textWidth).Split('\n')[0]; // one line; the chat log has the full text
         b.DrawString(Game1.smallFont, status, new Vector2(left, this.input.Y - 36), Color.DimGray);
 

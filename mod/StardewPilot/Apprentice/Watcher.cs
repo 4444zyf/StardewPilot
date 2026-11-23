@@ -42,6 +42,19 @@ internal sealed class Watcher
 
     private DayLog? day;
     private Slice? cur;
+
+    /// <summary>The day exists only for a lesson (apprentice mode is off): it is never logged.</summary>
+    private bool lessonOnly;
+
+    /// <summary>"Watch me": the lesson the watcher feeds while the player plays by hand.</summary>
+    public LessonRecorder Lesson { get; } = new();
+
+    /// <summary>Spawned forage on the current map, by tile, with its item (read only during a lesson).</summary>
+    private readonly Dictionary<Vector2, string> spawned = new();
+    private readonly List<(string item, int tick)> pickedForage = new();
+
+    /// <summary>Machines on the current map that are empty or ready, by tile (read only during a lesson, to see loading).</summary>
+    private readonly Dictionary<Vector2, string> idleMachines = new();
     private readonly Dictionary<string, uint> counters = new();
     private readonly Dictionary<string, (int gifts, bool talked)> friends = new();
     private readonly HashSet<long> pettedAnimals = new();
@@ -61,7 +74,7 @@ internal sealed class Watcher
     /// Crop and machine state is shared in co-op: only an item arriving in this player's backpack proves this player did it.
     /// </summary>
     private readonly List<(string item, int tick)> emptiedCrops = new();
-    private readonly List<int> emptiedMachines = new();
+    private readonly List<(string kind, int tick)> emptiedMachines = new();
 
     /// <summary>When the local player last pressed the action button (petting a farm animal sets a flag shared by all players).</summary>
     private int lastActionTick = -999;
@@ -80,7 +93,7 @@ internal sealed class Watcher
         this.selfPlay = selfPlay;
     }
 
-    public bool Watching => this.day != null;
+    public bool Watching => this.day != null && !this.lessonOnly;
 
     // ------------------------------------------------------------ day
 
@@ -90,6 +103,36 @@ internal sealed class Watcher
         this.Reset();
         if (!this.config().Apprentice.Enabled)
             return;
+        this.BuildDay();
+    }
+
+    /// <summary>Start watching for a lesson. With apprentice mode off the day is watched only for the lesson and never logged.</summary>
+    public void StartLesson()
+    {
+        if (this.day == null)
+        {
+            this.Reset();
+            this.BuildDay();
+            this.lessonOnly = true;
+        }
+        this.Lesson.Start(MemoryStore.DateKey());
+        this.RefreshLessonSignals();
+    }
+
+    /// <summary>The lesson ended: a day watched only for it stops being watched.</summary>
+    public List<LessonEvent> EndLesson()
+    {
+        if (this.Lesson.Active && Game1.currentLocation is { } loc)
+            this.NoteLeft(loc);
+        this.Lesson.Stop(null);
+        var events = this.Lesson.Take();
+        if (this.lessonOnly)
+            this.Reset();
+        return events;
+    }
+
+    private void BuildDay()
+    {
         Farm farm = Game1.getFarm();
         var log = new DayLog
         {
@@ -131,9 +174,14 @@ internal sealed class Watcher
     /// <summary>Day end: close the last slice and add bedtime and shipping. Returns the day's log, or null when not watching.</summary>
     public DayLog? EndDay()
     {
+        if (this.Lesson.HasLesson)
+        {
+            this.Lesson.Drop();
+            Guide.ChatLog.Add(Guide.ChatSender.System, I18n.Get("lesson.day-ended"));
+        }
         if (this.day == null)
             return null;
-        if (!this.config().Apprentice.Enabled)
+        if (!this.config().Apprentice.Enabled || this.lessonOnly)
         {
             this.Reset(); // switched off during the day: keep nothing
             return null;
@@ -162,6 +210,10 @@ internal sealed class Watcher
     {
         this.day = null;
         this.cur = null;
+        this.lessonOnly = false;
+        this.spawned.Clear();
+        this.pickedForage.Clear();
+        this.idleMachines.Clear();
         this.counters.Clear();
         this.friends.Clear();
         this.pettedAnimals.Clear();
@@ -182,7 +234,7 @@ internal sealed class Watcher
     /// <summary>Today so far, with the open slice ending now. Null when not watching.</summary>
     public DayLog? Today()
     {
-        if (this.day == null || this.cur == null)
+        if (this.day == null || this.cur == null || this.lessonOnly)
             return null;
         this.cur.End = Game1.timeOfDay;
         return this.day;
@@ -209,6 +261,7 @@ internal sealed class Watcher
         this.RefreshMachines();
         this.RefreshCrops();
         this.BaselineAnimals();
+        this.RefreshLessonSignals();
     }
 
     /// <summary>Close the open slice; merge it into the one before when that was on the same map under the same control.</summary>
@@ -240,6 +293,8 @@ internal sealed class Watcher
     {
         if (this.day == null || !e.IsLocalPlayer)
             return;
+        if (this.Lesson.Active && this.cur?.Control == Control.Hand)
+            this.NoteLeft(e.OldLocation);
         if (e.NewLocation is MineShaft shaft && this.cur != null && MapKey(shaft) == this.cur.Map)
         {
             this.Floor(shaft); // the next floor of the same mine: same slice
@@ -250,11 +305,21 @@ internal sealed class Watcher
         this.CutAndOpen("warp");
     }
 
+    /// <summary>A job started: what the player did by hand until now belongs to the hand slice, and what the job does to the next.</summary>
+    public void OnJobStarted()
+    {
+        if (this.day != null && this.cur != null && this.ControlNow() != this.cur.Control)
+            this.CutAndOpen("job start");
+    }
+
     public void OnJobFinished(string name, JobResult result)
     {
         if (this.day == null)
             return;
         this.lastJob = (name, Game1.timeOfDay);
+        // A job the player asked for during a lesson becomes a step, with the arguments it ran with.
+        if (this.Lesson.Active && result.Args != null && !this.selfPlay.Enabled)
+            this.Lesson.Add(new LessonEvent { Act = LessonAct.Job, Map = MapKey(Game1.currentLocation), Job = name, Args = RoutineJson.ToPlain(result.Args), Failed = result.Outcome == JobOutcome.Failed });
         this.cur?.Jobs.Add($"{Time.Format(Game1.timeOfDay)} {name}: {result.Outcome.ToString().ToLowerInvariant()}");
         if (result.Outcome != JobOutcome.Failed && Act.OfJob(name) is { } act && !this.day.CopilotDid.Contains(act))
             this.day.CopilotDid.Add(act);
@@ -284,6 +349,7 @@ internal sealed class Watcher
                 {
                     this.cur.AddItem("bought", id, n);
                     this.cur.Add(Act.Buy, n, now);
+                    this.Note(Act.Buy, id, n);
                     var stock = shop.itemPriceAndStock.FirstOrDefault(p => p.Key is Item i && i.QualifiedItemId == id);
                     if (stock.Value != null)
                         this.cur.Spent += stock.Value.Price * n;
@@ -292,6 +358,7 @@ internal sealed class Watcher
                 {
                     this.cur.AddItem("sold", id, n);
                     this.cur.Add(Act.Sell, n, now);
+                    this.Note(Act.Sell, id, n);
                 }
                 if ((gained.Count > 0 || lost.Count > 0) && shop.ShopId is { Length: > 0 } shopId && !this.cur.Shops.Contains(shopId))
                     this.cur.Shops.Add(shopId);
@@ -300,7 +367,7 @@ internal sealed class Watcher
 
             // A mini-shipping bin is a chest in the game's code, but what goes in is sold overnight.
             case ItemGrabMenu grab when grab.context is Chest { SpecialChestType: Chest.SpecialChestTypes.MiniShippingBin }:
-                foreach (var (id, n) in lost) { this.cur.AddItem("sold", id, n); this.cur.Add(Act.Sell, n, now); }
+                foreach (var (id, n) in lost) { this.cur.AddItem("sold", id, n); this.cur.Add(Act.Sell, n, now); this.Note(Act.Sell, id, n); }
                 this.Trace($"mini-shipping bin: -{string.Join(",", lost)}");
                 return;
 
@@ -310,16 +377,18 @@ internal sealed class Watcher
 
             case ItemGrabMenu grab when grab.context is Chest box:
                 {
-                    foreach (var (id, n) in gained) { this.cur.AddItem("fetched", id, n); this.cur.Add(Act.Fetch, n, now); }
+                    string where = box.SpecialChestType == Chest.SpecialChestTypes.JunimoChest ? "junimo"
+                        : Game1.currentLocation is { } here && ChestIds.TileOf(here, box) is { } at ? $"{at.X},{at.Y}" : "";
+                    foreach (var (id, n) in gained) { this.cur.AddItem("fetched", id, n); this.cur.Add(Act.Fetch, n, now); this.Note(Act.Fetch, id, n, where); }
                     // The chest menu also has a trash can and a drop button: only what the chest now holds was stored.
                     var held = box.GetItemsForPlayer().Where(i => i != null).Select(i => i.QualifiedItemId).ToHashSet();
-                    foreach (var (id, n) in lost.Where(l => held.Contains(l.QualifiedItemId))) { this.cur.AddItem("stored", id, n); this.cur.Add(Act.Store, n, now); }
+                    foreach (var (id, n) in lost.Where(l => held.Contains(l.QualifiedItemId))) { this.cur.AddItem("stored", id, n); this.cur.Add(Act.Store, n, now); this.Note(Act.Store, id, n, where); }
                     this.Trace($"chest: +{string.Join(",", gained)} -{string.Join(",", lost)}");
                     return;
                 }
 
             case ItemGrabMenu grab when grab.context is SObject { QualifiedItemId: AnimalTools.AutoGrabberId }:
-                foreach (var (id, n) in gained) { this.cur.AddItem("gained", id, n); this.cur.Add(Act.Animals, n, now); }
+                foreach (var (id, n) in gained) { this.cur.AddItem("gained", id, n); this.cur.Add(Act.Animals, n, now); this.Note(Act.Animals, id, n, Building()); }
                 this.Trace($"auto-grabber: +{string.Join(",", gained)}");
                 return;
         }
@@ -331,14 +400,27 @@ internal sealed class Watcher
         {
             this.CheckCrops();
             this.CheckMachines();
+            this.CheckSpawned();
             this.CreditEmptied(now);
         }
         foreach (var (id, n) in gained)
         {
             if (noMenu && this.justHarvested.TryGetValue(id, out int tick) && Game1.ticks - tick <= 180)
+            {
                 this.cur.AddItem("harvested", id, n);
+                this.Note(Act.Harvest, id, n);
+            }
             else
+            {
                 this.cur.AddItem("gained", id, n);
+                // Forage picked up next to the farmer just before (spawned objects are read only during a lesson).
+                int f = this.pickedForage.FindIndex(x => x.item == id && Game1.ticks - x.tick <= 180);
+                if (noMenu && f >= 0)
+                {
+                    this.pickedForage.RemoveAt(f);
+                    this.Note(Game1.currentLocation is AnimalHouse ? Act.Animals : Act.Forage, id, n, Game1.currentLocation is AnimalHouse ? Building() : "");
+                }
+            }
         }
         this.Trace($"gained {string.Join(",", gained)} (menu {Game1.activeClickableMenu?.GetType().Name ?? "none"})");
     }
@@ -361,8 +443,10 @@ internal sealed class Watcher
             this.cur.Add(Act.Harvest, 1, now);
             this.justHarvested[item] = Game1.ticks;
         }
-        int machines = this.emptiedMachines.Count(t => t >= recent);
+        int machines = this.emptiedMachines.Count(t => t.tick >= recent);
         this.cur.Add(Act.Machines, machines, now);
+        foreach (var kind in this.emptiedMachines.Where(t => t.tick >= recent).GroupBy(t => t.kind))
+            this.Note(Act.Machines, "", kind.Count(), kind.Key);
         if (machines > 0 || this.emptiedCrops.Count > 0)
             this.Trace($"credited {this.emptiedCrops.Count(x => x.tick >= recent)} crops, {machines} machines");
         this.emptiedCrops.Clear();
@@ -391,7 +475,10 @@ internal sealed class Watcher
             {
                 this.cur.Swings[tool.QualifiedItemId] = (this.cur.Swings.TryGetValue(tool.QualifiedItemId, out int n) ? n : 0) + 1;
                 if (act.Length > 0)
+                {
                     this.cur.Add(act, 1, Game1.timeOfDay);
+                    this.Note(act, "", 1, act == Act.Animals ? Building() : "");
+                }
                 this.Trace($"swing {tool.QualifiedItemId}");
             }
             this.wasUsingTool = using_;
@@ -404,6 +491,18 @@ internal sealed class Watcher
                 this.RefreshMachines();
                 this.CheckCrops();
                 this.RefreshCrops();
+                if (this.Lesson.Active)
+                {
+                    this.CheckSpawned();
+                    this.CheckLoaded();
+                    this.RefreshLessonSignals();
+                    if (Game1.eventUp || Game1.isFestival())
+                        this.StopLesson(I18n.Get("lesson.because-cutscene"));
+                    else if (Time.Between(this.Lesson.StartedAt, Game1.timeOfDay) >= LessonRecorder.MaxMinutes)
+                        this.StopLesson(I18n.Get("lesson.because-six-hours"));
+                    else if (!this.Lesson.Active)
+                        this.StopLesson(this.Lesson.EndedBecause ?? I18n.Get("lesson.because-full"));
+                }
             }
         }
         finally
@@ -463,6 +562,9 @@ internal sealed class Watcher
                 // Eggs and other produce picked up in an animal building count as tending the animals.
                 string a = act == Act.Forage && Game1.currentLocation is AnimalHouse ? Act.Animals : act;
                 this.cur.Add(a, (int)(value - before), now);
+                // Forage and produce are noted with their item when they reach the backpack.
+                if (act != Act.Forage)
+                    this.Note(a, "", (int)(value - before));
                 this.Trace($"counter {stat} +{value - before}");
             }
         }
@@ -477,6 +579,7 @@ internal sealed class Watcher
             {
                 this.cur.Talked.Add(name);
                 this.cur.Add(Act.Talk, 1, now);
+                this.Note(Act.Talk, "", 1, name);
                 this.Trace($"talked to {name}");
             }
             for (int g = before.gifts; g < f.GiftsToday; g++)
@@ -484,6 +587,7 @@ internal sealed class Watcher
                 string item = Game1.ticks - this.lastRemoved.tick <= 120 ? this.lastRemoved.id : "";
                 this.cur.Gifts.Add(new[] { name, item });
                 this.cur.Add(Act.Gift, 1, now);
+                this.Note(Act.Gift, item, 1, name);
                 this.Trace($"gift to {name}: {item}");
             }
         }
@@ -496,6 +600,7 @@ internal sealed class Watcher
             {
                 this.cur.Petted++;
                 this.cur.Add(Act.Animals, 1, now);
+                this.Note(Act.Animals, "", 1);
                 this.Trace($"petted {pet.Name}");
             }
         }
@@ -508,6 +613,7 @@ internal sealed class Watcher
             {
                 this.cur.Petted++;
                 this.cur.Add(Act.Animals, 1, now);
+                this.Note(Act.Animals, "", 1, Building());
                 this.Trace($"petted {a.Name}");
             }
         }
@@ -535,7 +641,7 @@ internal sealed class Watcher
                 continue;
             this.readyMachines.Remove(tile);
             if (this.cur.Control == Control.Hand && Vector2.Distance(tile, Game1.player.Tile) <= 2.5f)
-                this.emptiedMachines.Add(Game1.ticks);
+                this.emptiedMachines.Add((o?.QualifiedItemId ?? "", Game1.ticks));
         }
     }
 
@@ -579,14 +685,103 @@ internal sealed class Watcher
         this.cur.MineTo = Math.Max(this.cur.MineTo, floor);
     }
 
+    // ------------------------------------------------------------ lessons
+
+    /// <summary>Add to the lesson what the player did by hand.</summary>
+    private void Note(string act, string item, int count, string detail = "")
+    {
+        if (!this.Lesson.Active || this.cur?.Control != Control.Hand || Game1.currentLocation is not { } loc)
+            return;
+        this.Lesson.Add(new LessonEvent { Act = act, Map = MapKey(loc), Item = item, Count = count, Detail = detail });
+    }
+
+    /// <summary>The animal building the farmer is in, by its map's unique name; "" outside.</summary>
+    private static string Building() => Game1.currentLocation is AnimalHouse house ? house.NameOrUniqueName : "";
+
+    private void StopLesson(string because)
+    {
+        if (Game1.currentLocation is { } loc)
+            this.NoteLeft(loc);
+        this.Lesson.Stop(because);
+        Guide.ChatLog.Add(Guide.ChatSender.System, I18n.Get("lesson.ended", new { because }));
+    }
+
+    /// <summary>What is still ready on a map the player leaves: the kinds a step left out, for the playback's words.</summary>
+    private void NoteLeft(GameLocation loc)
+    {
+        var left = new List<string>();
+        foreach (TerrainFeature t in loc.terrainFeatures.Values)
+            if (t is HoeDirt { crop: { } crop } dirt && !crop.dead.Value && dirt.readyForHarvest() && ItemRegistry.QualifyItemId(crop.indexOfHarvest.Value) is { } id)
+                left.Add("crop:" + id);
+        foreach (SObject o in loc.objects.Values)
+        {
+            if (o.IsSpawnedObject)
+                left.Add("forage:" + o.QualifiedItemId);
+            else if (IsReadyMachine(o))
+                left.Add("machine:" + o.QualifiedItemId);
+        }
+        this.Lesson.Add(new LessonEvent { Act = LessonAct.Left, Map = MapKey(loc), Left = left.Distinct().ToList() });
+    }
+
+    private static bool IsMachine(SObject o) => o.GetMachineData() != null && o is not Chest;
+
+    private void RefreshLessonSignals()
+    {
+        this.spawned.Clear();
+        this.idleMachines.Clear();
+        if (!this.Lesson.Active || Game1.currentLocation is not { } loc)
+            return;
+        foreach (var (tile, o) in loc.objects.Pairs)
+        {
+            if (o.IsSpawnedObject)
+                this.spawned[tile] = o.QualifiedItemId;
+            else if (IsMachine(o) && (o.heldObject.Value == null || o.readyForHarvest.Value))
+                this.idleMachines[tile] = o.QualifiedItemId;
+        }
+    }
+
+    /// <summary>Spawned forage next to the farmer that is gone: picked up, by this player if the item reaches the backpack.</summary>
+    private void CheckSpawned()
+    {
+        if (!this.Lesson.Active || Game1.currentLocation is not { } loc)
+            return;
+        foreach (var (tile, item) in this.spawned.ToList())
+        {
+            if (loc.objects.TryGetValue(tile, out SObject? o) && o.IsSpawnedObject)
+                continue;
+            this.spawned.Remove(tile);
+            if (Vector2.Distance(tile, Game1.player.Tile) <= 2.5f)
+                this.pickedForage.Add((item, Game1.ticks));
+        }
+        this.pickedForage.RemoveAll(x => Game1.ticks - x.tick > 300);
+    }
+
+    /// <summary>An empty or ready machine next to the farmer now works on something the backpack just lost: loaded by hand.</summary>
+    private void CheckLoaded()
+    {
+        if (Game1.currentLocation is not { } loc || this.cur?.Control != Control.Hand)
+            return;
+        foreach (var (tile, kind) in this.idleMachines)
+        {
+            if (!loc.objects.TryGetValue(tile, out SObject? o) || o.heldObject.Value == null || o.readyForHarvest.Value)
+                continue;
+            if (Vector2.Distance(tile, Game1.player.Tile) <= 2.5f && Game1.ticks - this.lastRemoved.tick <= 120 && this.lastRemoved.id.Length > 0)
+            {
+                this.Note(LessonAct.Load, this.lastRemoved.id, 1, kind);
+                this.Trace($"loaded {kind} with {this.lastRemoved.id}");
+            }
+        }
+    }
+
     // ------------------------------------------------------------ places
 
     /// <summary>The map's id in a log: all mine floors are one map, and so are the Skull Cavern's.</summary>
-    public static string MapKey(GameLocation loc) => loc switch
+    public static string MapKey(GameLocation? loc) => loc switch
     {
         MineShaft { mineLevel: > 120 } => "SkullCave",
         MineShaft => "Mines",
         VolcanoDungeon => "Volcano",
+        null => "",
         _ => loc.NameOrUniqueName,
     };
 

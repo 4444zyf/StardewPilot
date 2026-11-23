@@ -44,6 +44,12 @@ public static class Act
     public const string Store = "store";
     public const string Fetch = "fetch";
 
+    /// <summary>Every activity key.</summary>
+    public static readonly string[] All = { Water, Harvest, Animals, Machines, Forage, Sow, Hoe, Fish, Rocks, Chop, Weeds, Combat, Craft, Cook, Geodes, Talk, Gift, Buy, Sell, Store, Fetch };
+
+    /// <summary>Words for an activity in the player's language, for what the player reads. The diary keeps <see cref="Word"/>.</summary>
+    public static string Say(string act) => All.Contains(act) ? I18n.Get("act." + act) : act;
+
     /// <summary>Words for an activity, for habit lines.</summary>
     public static string Word(string act) => act switch
     {
@@ -289,5 +295,13 @@ public static class Time
         string ampm = h < 12 ? "am" : "pm";
         int h12 = h % 12 == 0 ? 12 : h % 12;
         return m == 0 ? $"{h12}{ampm}" : $"{h12}:{m:00}{ampm}";
+    }
+
+    /// <summary>The time for the player, in their language: "10pm" in English, "22 h" in French.</summary>
+    public static string Say(int time)
+    {
+        int h = time / 100 % 24, m = time % 100;
+        int h12 = h % 12 == 0 ? 12 : h % 12;
+        return I18n.Get(m == 0 ? "time.hour" : "time.minutes", new { h12, h24 = h, mm = m.ToString("00"), ampm = I18n.Get(h < 12 ? "time.am" : "time.pm") });
     }
 }

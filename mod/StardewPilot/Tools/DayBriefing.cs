@@ -21,6 +21,9 @@ namespace StardewPilot.Tools;
 /// </summary>
 internal static class DayBriefing
 {
+    /// <summary>The routines scheduled for today (set by the mod): name, time, and "offer" or "self".</summary>
+    public static Func<List<(string name, int at, string start)>>? RoutinesToday;
+
     public static ToolDef Tool(MemoryStore memory, Func<ModConfig> config, ApprenticeService apprentice) => new()
     {
         Name = "get_day_briefing",
@@ -47,7 +50,7 @@ internal static class DayBriefing
         if (DataLoader.Festivals_FestivalDates(Game1.content).TryGetValue($"{Game1.currentSeason}{Game1.dayOfMonth}", out string? festival))
         {
             facts["festivalToday"] = festival;
-            lines.Add($"Today is the {festival}.");
+            lines.Add(I18n.Get("briefing.festival", new { festival }));
         }
 
         string weather = farm.GetWeather().Weather;
@@ -55,7 +58,7 @@ internal static class DayBriefing
         facts["weatherTomorrow"] = Game1.weatherForTomorrow;
         string luck = LuckLevel(me);
         facts["luck"] = luck;
-        lines.Add($"Weather: {WeatherWord(weather)} today, {WeatherWord(Game1.weatherForTomorrow)} tomorrow. Luck: {luck}.");
+        lines.Add(I18n.Get("briefing.weather", new { today = WeatherWord(weather), tomorrow = WeatherWord(Game1.weatherForTomorrow), luck = I18n.Get("luck." + luck.Replace(' ', '-')) }));
 
         // Birthdays of villagers the player has met, with the best owned gift (discovered tastes only unless "tell me everything").
         List<FoundItem>? scan = null;
@@ -72,7 +75,9 @@ internal static class DayBriefing
                 bestGiftOwned = idea.item == null ? null : new { item = idea.item.DisplayName, taste = idea.taste == 0 ? "loves" : "likes", where = idea.where },
                 giftNote = idea.item != null ? null : everything ? "The player owns nothing this villager loves or likes." : "The player owns no gift whose taste they have discovered for this villager (others may still be liked; get_gift_ideas can tell if the player asks).",
             });
-            lines.Add($"{npc.displayName}'s birthday today." + (idea.item != null ? $" You have {idea.item.DisplayName} ({(idea.taste == 0 ? "loved" : "liked")}, {idea.where})." : ""));
+            lines.Add(idea.item != null
+                ? I18n.Get(idea.taste == 0 ? "briefing.birthday-loved" : "briefing.birthday-liked", new { npc = npc.displayName, item = idea.item.DisplayName })
+                : I18n.Get("briefing.birthday", new { npc = npc.displayName }));
         }
         if (birthdays.Count > 0)
             facts["birthdays"] = birthdays;
@@ -99,9 +104,9 @@ internal static class DayBriefing
             machines += loc.objects.Values.Count(o => o.readyForHarvest.Value && o.heldObject.Value is { } h && h is not StardewValley.Objects.Chest && o is not StardewValley.Objects.Chest);
             return true;
         });
-        if (ready > 0) { facts["cropsReady"] = ready; lines.Add($"{ready} crops ready to harvest."); }
-        if (dying > 0) { facts["cropsDyingTomorrow"] = dying; lines.Add($"{dying} crops die tomorrow when the season changes. Harvest what you can."); }
-        if (machines > 0) { facts["machinesReady"] = machines; lines.Add($"{machines} machines have something ready."); }
+        if (ready > 0) { facts["cropsReady"] = ready; lines.Add(I18n.Get("briefing.crops-ready", new { count = ready })); }
+        if (dying > 0) { facts["cropsDyingTomorrow"] = dying; lines.Add(I18n.Get("briefing.crops-dying", new { count = dying })); }
+        if (machines > 0) { facts["machinesReady"] = machines; lines.Add(I18n.Get("briefing.machines-ready", new { count = machines })); }
 
         // The Traveling Cart: only items a bundle still needs.
         if (Game1.getLocationFromName("Forest") is Forest forest && forest.ShouldTravelingMerchantVisitToday() && needs.Count > 0)
@@ -114,7 +119,7 @@ internal static class DayBriefing
                     if (item is not Item i || info.TradeItem != null || !needs.Any(n => n.QualifiedId == i.QualifiedItemId && i.Quality >= n.MinQuality))
                         continue;
                     cart.Add(new { item = i.DisplayName, price = info.Price, forBundle = needs.First(n => n.QualifiedId == i.QualifiedItemId).Bundle });
-                    lines.Add($"The Traveling Cart is in the forest and sells {i.DisplayName} ({info.Price}g), which a bundle needs.");
+                    lines.Add(I18n.Get("briefing.cart", new { item = i.DisplayName, price = info.Price }));
                 }
             }
             catch (Exception)
@@ -134,12 +139,12 @@ internal static class DayBriefing
         {
             facts["questsEnding"] = ending;
             foreach (var q in ending)
-                lines.Add($"Quest \"{q.quest}\" ends {(q.daysLeft <= 1 ? "today" : "tomorrow")}.");
+                lines.Add(I18n.Get(q.daysLeft <= 1 ? "briefing.quest-today" : "briefing.quest-tomorrow", new { quest = q.quest }));
         }
         if (me.toolBeingUpgraded.Value is { } tool && me.daysLeftForToolUpgrade.Value <= 0)
         {
             facts["toolUpgradeReady"] = tool.DisplayName;
-            lines.Add($"Your {tool.DisplayName} is ready at the blacksmith.");
+            lines.Add(I18n.Get("briefing.tool-ready", new { tool = tool.DisplayName }));
         }
 
         // Bundle items about to go out of season (at most three more days, and not in the next season either).
@@ -154,7 +159,7 @@ internal static class DayBriefing
             {
                 facts["bundleLastChance"] = soon;
                 foreach (var s in soon)
-                    lines.Add($"Last chance soon for {s.item} ({s.bundle}): {s.until}.");
+                    lines.Add(I18n.Get(s.daysLeft switch { 0 => "briefing.last-chance-today", 1 => "briefing.last-chance-one", _ => "briefing.last-chance" }, new { item = s.item, bundle = s.bundle, days = s.daysLeft }));
             }
         }
 
@@ -167,10 +172,24 @@ internal static class DayBriefing
                 ? new { date = last.date, shippedValue = bin.Success ? int.Parse(bin.Groups[1].Value) : (int?)null, moneyChangeBeforeShipping = money.Success ? int.Parse(money.Groups[1].Value) : (int?)null }
                 : new { date = last.date, summary = text.Length > 300 ? text.Substring(0, 300) : text };
             if (bin.Success && int.Parse(bin.Groups[1].Value) > 0)
-                lines.Add($"Yesterday's shipping paid {bin.Groups[1].Value}g.");
+                lines.Add(I18n.Get("briefing.yesterday", new { gold = bin.Groups[1].Value }));
         }
 
         apprentice.AddToBriefing(facts, lines, morning, selfPlay);
+
+        // The routines scheduled for today (none in self-play, where schedules do nothing). The least important line.
+        if (!selfPlay && RoutinesToday?.Invoke() is { Count: > 0 } today)
+        {
+            facts["routinesToday"] = today.Select(r => new { name = r.name, at = Apprentice.Model.Time.Clock(r.at), start = r.start == "self" ? "by itself if untouched after waking" : "offered" }).ToList();
+            lines.Add(I18n.Get("briefing.routines", new
+            {
+                routines = I18n.List(today.Select(r => I18n.Get(r.start == "self" ? "briefing.routine-self" : "briefing.routine-offered", new
+                {
+                    name = r.name,
+                    when = r.at == 600 ? I18n.Get("schedule.morning") : I18n.Get("schedule.at", new { time = Apprentice.Model.Time.Say(r.at) }),
+                }))),
+            }));
+        }
 
         facts["how"] = "Weather, birthdays, festival, quests, cart stock: raw or asked of the game. Luck: the TV's thresholds applied by the mod. Crops ready and dying, gift ideas, last chances: computed.";
         return (facts, lines);
@@ -193,14 +212,14 @@ internal static class DayBriefing
 
     private static string WeatherWord(string weather) => weather switch
     {
-        "Sun" => "sunny",
-        "Rain" => "rain",
-        "Storm" => "storm",
-        "Snow" => "snow",
-        "Wind" => "windy",
-        "GreenRain" => "green rain",
-        "Festival" => "festival weather",
-        "Wedding" => "wedding",
+        "Sun" => I18n.Get("weather.sun"),
+        "Rain" => I18n.Get("weather.rain"),
+        "Storm" => I18n.Get("weather.storm"),
+        "Snow" => I18n.Get("weather.snow"),
+        "Wind" => I18n.Get("weather.wind"),
+        "GreenRain" => I18n.Get("weather.green-rain"),
+        "Festival" => I18n.Get("weather.festival"),
+        "Wedding" => I18n.Get("weather.wedding"),
         _ => weather.ToLowerInvariant(),
     };
 

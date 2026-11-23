@@ -15,5 +15,9 @@
   <ItemGroup>
     <Compile Include="../StardewPilot/Platform/*.cs" Link="Platform/%(Filename)%(Extension)" />
     <Compile Include="../StardewPilot/Apprentice/Model/*.cs" Link="Apprentice/%(Filename)%(Extension)" />
+    <Compile Include="../StardewPilot/I18n.cs" Link="I18n.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="../StardewPilot/i18n/*.json" Link="i18n/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

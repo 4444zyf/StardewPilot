@@ -15,10 +15,14 @@ namespace StardewPilot.Tools;
 /// <summary>Tools that make the farmer act. Each runs one autopilot job and returns its outcome.</summary>
 internal static class ActionTools
 {
+    /// <summary>Every action job by name: its input schema and how to build it from arguments. Routines run their steps through these.</summary>
+    public static readonly Dictionary<string, (JObject Schema, Func<JObject, Func<JobContext, IEnumerable>> Build)> Jobs = new(StringComparer.OrdinalIgnoreCase);
+
     public static void Register(ToolRegistry registry, JobRunner runner, Macros macros)
     {
         void Action(string name, string description, JObject schema, Func<JObject, Func<JobContext, IEnumerable>> build)
         {
+            Jobs[name] = (schema, build);
             registry.Add(new ToolDef
             {
                 Name = name,
@@ -27,7 +31,7 @@ internal static class ActionTools
                 ReadOnly = false,
                 AsyncHandler = async args =>
                 {
-                    Task<JobResult> job = await MainThread.Run(() => runner.Start(name, build(args)));
+                    Task<JobResult> job = await MainThread.Run(() => runner.Start(name, build(args), args));
                     JobResult result = await job;
                     return result.ToJson();
                 },
@@ -67,9 +71,11 @@ internal static class ActionTools
             a => ctx => macros.PlantSeeds(ctx, a.Str("seeds")!, a.Int("count"), a.Str("location"), a.Bool("water") ?? true));
 
         Action("collect_forage",
-            "Pick up all forage (wild plants, shells and similar) on a map, default the current one.",
-            Schema.Object(("location", Schema.String("Map name. Default the current map."), false)),
-            a => ctx => macros.CollectForage(ctx, a.Str("location")));
+            "Pick up all forage (wild plants, shells and similar) on a map, default the current one, or only some kinds.",
+            Schema.Object(
+                ("location", Schema.String("Map name. Default the current map."), false),
+                ("items", Schema.Array(Schema.String("Item name."), "Only these kinds, for example Truffle. Default all."), false)),
+            a => ctx => macros.CollectForage(ctx, a.Str("location"), (a["items"] as JArray)?.Select(t => t.ToString()).ToList()));
 
         Action("buy_items",
             "Walk to the shop that sells an item and buy it through the shop menu. Fails if the shop is closed or the farmer cannot afford it. Large purchases ask the player first.",
@@ -95,8 +101,9 @@ internal static class ActionTools
                 ("allButTools", Schema.Boolean("Store everything except tools."), false),
                 ("location", Schema.String("Map with the chest. Default the current map."), false),
                 ("x", Tile("Chest tile x."), false),
-                ("y", Tile("Chest tile y."), false)),
-            a => ctx => macros.Store(ctx, (a["items"] as JArray)?.Select(t => t.ToString()).ToList(), a.Bool("allButTools") ?? false, a.Int("x") is int x && a.Int("y") is int y ? new Point(x, y) : null, a.Str("location")));
+                ("y", Tile("Chest tile y."), false),
+                ("chest", Schema.String("A chest id saved in a routine (routines use it; leave it out)."), false)),
+            a => ctx => macros.Store(ctx, (a["items"] as JArray)?.Select(t => t.ToString()).ToList(), a.Bool("allButTools") ?? false, a.Int("x") is int x && a.Int("y") is int y ? new Point(x, y) : null, a.Str("location"), a.Str("chest")));
 
         Action("put_things_away",
             "Put the backpack's items away into the player's own chests and fridges, the way the player already sorts them: each item goes to the chest that already holds most of it, " +
@@ -115,8 +122,9 @@ internal static class ActionTools
                 ("location", Schema.String("Map with the chest. Default the current map."), false),
                 ("x", Tile("Chest or fridge tile x."), false),
                 ("y", Tile("Chest or fridge tile y."), false),
-                ("minQuality", Schema.Enum("Only take items of this quality or better. Default any.", "normal", "silver", "gold", "iridium"), false)),
-            a => ctx => macros.Take(ctx, a.Str("item")!, a.Int("count"), a.Int("x") is int x && a.Int("y") is int y ? new Point(x, y) : null, a.Str("location"), QualityValue(a.Str("minQuality"))));
+                ("minQuality", Schema.Enum("Only take items of this quality or better. Default any.", "normal", "silver", "gold", "iridium"), false),
+                ("chest", Schema.String("A chest id saved in a routine (routines use it; leave it out)."), false)),
+            a => ctx => macros.Take(ctx, a.Str("item")!, a.Int("count"), a.Int("x") is int x && a.Int("y") is int y ? new Point(x, y) : null, a.Str("location"), QualityValue(a.Str("minQuality")), a.Str("chest")));
 
         Action("talk_to",
             "Walk to a villager and talk to them (raises friendship once a day). Returns what they said.",
@@ -188,7 +196,7 @@ internal static class ActionTools
             Handler = _ =>
             {
                 bool was = runner.IsRunning;
-                runner.Stop(JobOutcome.Partial, "Stopped by the agent.");
+                runner.Stop(JobOutcome.Partial, I18n.Get("stop.agent"), StopCause.Replaced);
                 return new { stopped = was };
             },
         });

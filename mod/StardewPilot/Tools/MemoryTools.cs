@@ -10,13 +10,13 @@ namespace StardewPilot.Tools;
 /// <summary>Tools for the agent's memory and for self-play.</summary>
 internal static class MemoryTools
 {
-    public static void Register(ToolRegistry registry, MemoryStore memory, SelfPlay selfPlay, Func<ModConfig> config, Action<bool, string?> setSelfPlay, Func<List<string>> habits)
+    public static void Register(ToolRegistry registry, MemoryStore memory, SelfPlay selfPlay, Func<ModConfig> config, Action<bool, string?> setSelfPlay, Func<List<string>> habits, Func<List<string>> routines)
     {
         registry.Add(new ToolDef
         {
             Name = "read_memory",
             Description = "What you remember about this farm: the standing goal, your notes (goals, the player's preferences, what you learned), today's plan, summaries of recent days, and the player's habits as the mod observed them. Also self-play state and today's model budget.",
-            Handler = _ => Snapshot(memory, selfPlay, config(), habits()),
+            Handler = _ => Snapshot(memory, selfPlay, config(), habits(), routines()),
         });
 
         registry.Add(new ToolDef
@@ -42,7 +42,7 @@ internal static class MemoryTools
             {
                 string plan = a.Str("plan") ?? "";
                 memory.WritePlan(plan);
-                ChatLog.Add(ChatSender.System, $"Today's plan:\n{plan.Trim()}");
+                ChatLog.Add(ChatSender.System, I18n.Get("chat.todays-plan") + "\n" + plan.Trim());
                 return new { saved = "pending until the game saves tonight", shownToPlayer = true };
             },
         });
@@ -71,12 +71,12 @@ internal static class MemoryTools
             Handler = a =>
             {
                 setSelfPlay(a.Bool("enabled") ?? false, a.Str("goal"));
-                return Snapshot(memory, selfPlay, config(), habits());
+                return Snapshot(memory, selfPlay, config(), habits(), routines());
             },
         });
     }
 
-    public static object Snapshot(MemoryStore memory, SelfPlay selfPlay, ModConfig cfg, List<string> habits) => new
+    public static object Snapshot(MemoryStore memory, SelfPlay selfPlay, ModConfig cfg, List<string> habits, List<string> routines) => new
     {
         date = MemoryStore.DateKey(),
         goal = memory.Goal.Length > 0 ? memory.Goal : null,
@@ -85,6 +85,7 @@ internal static class MemoryTools
         todayPlan = memory.TodayPlan.Length > 0 ? memory.TodayPlan : null,
         recentDays = memory.RecentSummaries(3).Select(d => new { d.date, summary = d.text }),
         habits = habits.Count > 0 ? habits : null,
+        routines = routines.Count > 0 ? new { names = routines, note = "The player's routines (run_routine). Run one only when the player asks for it." } : null,
         selfPlay = new
         {
             enabled = selfPlay.Enabled,

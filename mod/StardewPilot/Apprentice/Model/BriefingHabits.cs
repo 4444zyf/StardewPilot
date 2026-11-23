@@ -34,12 +34,12 @@ public static class BriefingHabits
         return steps.Count > 0 && OfferKey(steps) != offeredKey ? steps : null;
     }
 
-    /// <summary>"water the crops, then harvest the crops" from the steps' words.</summary>
-    public static string StepWords(List<MorningStep> steps) => string.Join(", then ", steps.Select(s => s.Words));
+    /// <summary>"water, then harvest" from the steps' activities, in the player's language.</summary>
+    public static string StepWords(List<MorningStep> steps) => string.Join(I18n.Get("habit.then"), steps.Select(s => Act.Say(s.Activity)));
 
     public static string OfferLine(List<MorningStep> steps) =>
-        $"I've noticed your usual morning: {StepWords(steps)}. Say \"{OfferPhrase}\" and I'll do it for you.";
+        I18n.Get("habit.offer", new { steps = StepWords(steps), phrase = I18n.Get("habit.offer-phrase") });
 
-    /// <summary>The habit's text, already worded as "mostly ... (n of m)".</summary>
-    public static string UsualDayLine(Habit h) => (h.Condition == "rain" ? "Rain today. " : "") + h.Text + ".";
+    /// <summary>The habit's text, already worded as "mostly ... (n of m)". The diary's words, so English.</summary>
+    public static string UsualDayLine(Habit h) => (h.Condition == "rain" ? I18n.Get("habit.rain-today") + " " : "") + h.Text + ".";
 }

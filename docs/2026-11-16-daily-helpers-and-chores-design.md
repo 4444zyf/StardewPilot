@@ -177,7 +177,7 @@ The result lists what was done and what could not be done, for example "no Milk 
 
 A routine would be a named, ordered list of action-tool calls, for example "morning": `water_crops`, `harvest_crops`, `tend_animals`, `tend_machines`, run by the mod with no model request between the steps and started with a chat command such as `/routine morning`.
 
-The review showed this is the riskiest part and does not fit the job runner as it is, so it is **not a work item here** and gets its own design. That design must settle at least:
+The review showed this is the riskiest part and does not fit the job runner as it is, so it is **not a work item here** and gets its own design. (Designed and built on 2026-11-17: [teach by showing](2026-11-17-teach-by-showing-design.md), where the player writes a routine by playing it once. Its "Running" section answers each point below.) That design must settle at least:
 
 - **One owner at a time:** the job runner replaces a running job when a new one starts. A routine and the agent would cancel each other's jobs.
 - **What ends a routine:** the player moving ends a job as "partly done", not "failed". Any stop the step did not cause itself must end the whole routine.

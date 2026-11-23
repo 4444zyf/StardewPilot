@@ -156,6 +156,20 @@ test("warnings are kept as context without starting a turn", async () => {
 	assert.equal(pi.customMessages[0].options.triggerTurn, undefined);
 });
 
+test("a routine the mod ran by its schedule is kept as context without starting a turn", async () => {
+	const { pi, push } = await connected();
+	push("routines/ran", { name: "truffle run", byItself: true, outcome: "done", text: '"truffle run" (every morning): all 3 steps done.' });
+	assert.equal(pi.customMessages.length, 1);
+	assert.match(String(pi.customMessages[0].message.content), /\[The mod ran the player's routine by its schedule\] "truffle run"/);
+	assert.equal(pi.customMessages[0].options.deliverAs, "nextTurn");
+	assert.equal(pi.customMessages[0].options.triggerTurn, undefined);
+});
+
+test("the briefing ranks today's routines last", () => {
+	const text = daySeedMessage({ date: "Y1-summer-09", briefing: { facts: { routinesToday: [{ name: "truffle run", at: "6am", start: "offered" }] }, fallback: "Today: truffle run in the morning (offered).", gameLanguage: "en" } });
+	assert.match(text, /routinesToday fact .* least important point/);
+});
+
 test("tip prompt falls back to the game language from settings", () => {
 	assert.match(tipPrompt({ kind: "x", fallback: "y" }, "fr"), /\(fr\)/);
 	assert.match(tipPrompt({ kind: "x", fallback: "y" }), /\(en\)/);

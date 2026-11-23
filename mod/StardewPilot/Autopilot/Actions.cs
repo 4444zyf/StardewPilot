@@ -70,7 +70,7 @@ internal static class Actions
 
         int slot = p.Items.IndexOf(tool);
         if (slot < 0)
-            throw JobContext.Fail($"The {tool.DisplayName} is not in the backpack.");
+            throw JobContext.Fail(I18n.Get("fail.tool-missing", new { tool = tool.DisplayName }));
         p.CurrentToolIndex = slot;
         Face(tile);
         // Same as clicking the tile: the game aims tools at lastClick when it is within reach.

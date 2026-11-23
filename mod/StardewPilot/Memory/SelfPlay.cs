@@ -46,6 +46,6 @@ internal sealed class SelfPlay
     public void LogJob(string name, JobResult result)
     {
         if (this.JobLog.Count < 60)
-            this.JobLog.Add($"{StardewPilot.Tools.StateTools.FormatTime(Game1.timeOfDay)} {name}: {result.Outcome.ToString().ToLowerInvariant()}{(result.Summary.EndsWith("finished.") ? "" : " - " + result.Summary)}");
+            this.JobLog.Add($"{StardewPilot.Tools.StateTools.FormatTime(Game1.timeOfDay)} {name}: {result.Outcome.ToString().ToLowerInvariant()}{(result.Outcome == JobOutcome.Done ? "" : " - " + result.Summary)}");
     }
 }
