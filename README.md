@@ -6,7 +6,7 @@
 
 Ask it anything, hand it the chores, or teach it your routine by doing it once. It plays the way a player does, and asks before anything that matters.
 
-[![Release: v0.4.0](https://img.shields.io/badge/release-v0.4.0-e07a1f)](https://github.com/4444zyf/StardewPilot/releases/latest)
+[![Release: v0.4.1](https://img.shields.io/badge/release-v0.4.1-e07a1f)](https://github.com/4444zyf/StardewPilot/releases/latest)
 ![Stardew Valley 1.6](https://img.shields.io/badge/Stardew%20Valley-1.6-5fae2d)
 ![SMAPI ≥ 4.5](https://img.shields.io/badge/SMAPI-%E2%89%A5%204.5-c98a4a)
 ![Node ≥ 22.19](https://img.shields.io/badge/node-%E2%89%A5%2022.19-8fd18b)
@@ -344,10 +344,10 @@ The design documents explain why each part works the way it does:
 
 Steps 1 to 4 of the build order work: the read-only bridge, the in-game guide (private chat overlay, proactive tips, instant warnings), the commanded autopilot, and self-play toward a goal you set. From step 5: fishing (including the minigame), a basic mines-and-combat routine, and a one-click launcher.
 
-- **v0.4.0** (latest, on GitHub, not on Nexus): daily helpers (morning briefing, item finder, gift ideas, bundle plan), animal and machine chores, apprentice mode and "put my things away".
+- **v0.4.1** (latest, on GitHub, not on Nexus): teach by showing, routines that start themselves, the mod in four languages (English, 简体中文, Français, Русский), `clear_way`, and the fixes from a self-play playtest (doors, paths, bedtime, self-play stops, the diary).
+- **v0.4.0**: daily helpers (morning briefing, item finder, gift ideas, bundle plan), animal and machine chores, apprentice mode and "put my things away".
 - **v0.3.1** removed the Claude Pro/Max sign-in, which Anthropic's terms do not allow in other apps.
 - **v0.3.0** added knowledge tools that answer from the running game, Windows fixes tested in CI, and `pilot_diagnose`.
-- **Next release:** teach by showing, routines that start themselves, and the four languages are built and tested and will be in the next release.
 
 ## Contributing
 
