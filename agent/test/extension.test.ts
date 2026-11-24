@@ -204,6 +204,36 @@ test("after the first try and two re-plans fail, further actions are blocked", a
 	assert.equal(await pi.fire("tool_call", { toolName: "water_crops", input: {} }), undefined);
 });
 
+test("in self-play, a halt goes on once with a note; a second halt waits for the player with self-play still on", async () => {
+	const pi = fakePi();
+	const transport = new ReplayTransport();
+	(transport as any).recording["tools/list"].tools.push({ name: "water_crops", description: "", inputSchema: { type: "object" }, annotations: { readOnlyHint: false } });
+	(transport as any).recording["tools/call"].water_crops = { content: [{ type: "text", text: '{"result":"failed","summary":"stuck"}' }], isError: false };
+	createStardewPilot(pi.api as any, async () => transport);
+	await pi.fire("session_start");
+	const push = (method: string, params: unknown) => transport.emit(JSON.stringify({ jsonrpc: "2.0", method, params }));
+	const waits = () => transport.sent.filter((m) => m.method === "selfplay/waiting").map((m) => m.params.waiting);
+	async function failingRun() {
+		await pi.fire("agent_start");
+		for (let i = 0; i < MAX_FAILED_ACTIONS; i++) await pi.tools.get("water_crops").execute(`c${i}`, {});
+		await pi.fire("agent_settled", { aborted: false });
+	}
+	push("selfplay/changed", { enabled: true });
+	pi.customMessages.length = 0;
+
+	await failingRun();
+	assert.deepEqual(waits(), [], "the first halt does not wait");
+	assert.ok(!transport.sent.some((m) => m.method === "tools/call" && m.params.name === "set_self_play"), "self-play is not switched off");
+
+	await failingRun();
+	assert.deepEqual(waits(), [true], "the second halt in a row waits for the player");
+
+	// The player's answer ends the wait.
+	push("chat/user_message", { text: "go fish instead" });
+	assert.deepEqual(waits(), [true, false]);
+	assert.deepEqual(pi.userMessages.map((m) => m.text), ["go fish instead"]);
+});
+
 test("the day seed asks for the morning briefing, in the game's language", () => {
 	const text = daySeedMessage({ date: "Y1-summer-09", briefing: { facts: { luck: "good" }, fallback: "Weather: sunny.", gameLanguage: "zh" } });
 	assert.match(text, /\[Morning briefing\]/);

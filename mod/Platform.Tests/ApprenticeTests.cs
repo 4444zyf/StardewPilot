@@ -121,6 +121,15 @@ internal static class ApprenticeTests
             Check(!line.Contains('\n') && !line.Contains("everything now"), "name not cleaned: " + line);
             var asked = new Slice { Start = 900, End = 930, Map = "Farm", Control = Control.Asked, Jobs = { "9:30 water_crops: done" } };
             Check(LogText.Line(asked, names) == "9:00-9:30 Farm: copilot, asked by the player: water_crops", LogText.Line(asked, names));
+            var byItself = new Slice { Start = 600, End = 610, Map = "Farm", Control = Control.Scheduled, Jobs = { "6:10 run_routine: done" } };
+            Check(LogText.Line(byItself, names) == "6:00-6:10 Farm: copilot, a routine that started by its schedule: run_routine", LogText.Line(byItself, names));
+            var idle = new Slice { Start = 1440, End = 2030, Map = "BusStop", Control = Control.Idle };
+            Check(LogText.Line(idle, names) == "14:40-20:30 BusStop: idle where the copilot left the farmer", LogText.Line(idle, names));
+        });
+        yield return ("habits: idle and scheduled time is not the player's", () =>
+        {
+            Check(Morning(Enumerable.Range(1, 6).Select(n => Day(n, control: Control.Idle))) == null, "idle time became a habit");
+            Check(Morning(Enumerable.Range(1, 6).Select(n => Day(n, control: Control.Scheduled))) == null, "a scheduled routine became a habit");
         });
         yield return ("activity log: at most the given lines, longest kept, in order", () =>
         {

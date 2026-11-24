@@ -143,14 +143,29 @@ internal sealed class RoutineScheduler
     /// <summary>Any button, from keyboard, mouse or controller.</summary>
     public void OnButtonPressed(SButton button)
     {
+        // Clicking through a menu is not touching the farmer: the night's level-up and shipping screens are still open
+        // after the new day starts, and their last click often lands just after they close.
+        if (button is SButton.MouseLeft or SButton.MouseRight
+            && (Game1.activeClickableMenu != null || Game1.ticks - this.dayStartTick < 60 || Game1.ticks - this.lastMenuTick < 30))
+            return;
         if (!this.touched)
             this.monitor.Log($"Routines: input ({button}); nothing starts by itself today.", LogLevel.Trace);
         this.touched = true;
     }
 
     /// <summary>Held keys, the cursor, the scroll wheel, the sticks, and the farmer moving by hand.</summary>
+    private int lastMenuTick;
+
     private void ReadInput()
     {
+        if (Game1.activeClickableMenu != null)
+        {
+            // Moving the cursor over a menu is not touching the farmer either.
+            this.lastMenuTick = Game1.ticks;
+            this.lastCursor = this.Cursor();
+            this.lastScroll = Game1.input.GetMouseState().ScrollWheelValue;
+            return;
+        }
         if (this.touched)
             return;
         Point cursor = this.Cursor();
@@ -317,7 +332,10 @@ internal sealed class RoutineScheduler
             default:
                 // The player took over, a menu opened, or a job the player asked for replaced it: the offer comes back, and nothing starts by itself again today.
                 this.touched = true;
-                text = I18n.Get("routine.stopped-again", new { head, why = result.Summary, key = this.config().Routines.StartKey });
+                // Nothing is offered during self-play, so the start key would do nothing then.
+                text = this.selfPlay.Enabled
+                    ? I18n.Get("routine.stopped", new { head, why = result.Summary })
+                    : I18n.Get("routine.stopped-again", new { head, why = result.Summary, key = this.config().Routines.StartKey });
                 toast = false;
                 break;
         }

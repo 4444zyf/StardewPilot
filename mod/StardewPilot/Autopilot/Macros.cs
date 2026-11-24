@@ -136,8 +136,24 @@ internal sealed class Macros
             ?? throw JobContext.Fail(I18n.Get("fail.no-tool-called", new { name = toolName }));
         foreach (object? s in Navigation.WalkWithinMap(ctx, tile, adjacent: true))
             yield return s;
+        // Say what the swing did, so the agent need not walk somewhere to find out whether a tree is down yet.
+        GameLocation loc = Game1.currentLocation;
+        float energy = Game1.player.Stamina;
+        ctx.Report["before"] = Blockers.At(loc, tile)?.Report ?? "nothing";
         foreach (object? s in Actions.UseTool(ctx, this.Cfg, tool, tile))
             yield return s;
+        ctx.Report["after"] = Blockers.At(loc, tile)?.Report ?? "nothing";
+        ctx.Report["walkableNow"] = Navigation.IsWalkable(loc, tile);
+        ctx.Report["energyUsed"] = (int)Math.Round(energy - Game1.player.Stamina);
+        ctx.Report["energy"] = (int)Game1.player.Stamina;
+    }
+
+    /// <summary>Walk to a tile in this map, cutting down wild trees and stumps and clearing weeds, stones and twigs on the way.</summary>
+    public IEnumerable ClearWay(JobContext ctx, Point tile, bool adjacent)
+    {
+        foreach (object? s in Navigation.WalkWithinMap(ctx, tile, adjacent, clearTrees: true))
+            yield return s;
+        ctx.Report["at"] = new { x = Game1.player.TilePoint.X, y = Game1.player.TilePoint.Y };
         ctx.Report["energy"] = (int)Game1.player.Stamina;
     }
 

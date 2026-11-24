@@ -18,6 +18,13 @@ internal static class AgentState
             busy = false;
     }
 
+    private static volatile bool waiting;
+
+    /// <summary>Self-play stopped to ask the player something and waits for the answer.</summary>
+    public static bool Waiting => waiting && Connected;
+
+    public static void SetWaiting(bool isWaiting) => waiting = isWaiting;
+
     public static void SetBusy(bool isBusy, string? what)
     {
         busy = isBusy;

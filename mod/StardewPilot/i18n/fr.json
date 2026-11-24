@@ -328,5 +328,30 @@
   "fail.no-chest": "Il n'y a pas de coffre ici ({{place}}).",
   "fail.no-chest-at-tile": "Pas de coffre ni de réfrigérateur sur cette case.",
   "fail.gift-refused": "{{npc}} n'a pas pris le cadeau. {{said}}",
-  "fail.no-sleep": "Le fermier a atteint le lit, mais le jeu n'a pas proposé de dormir."
+  "fail.no-sleep": "Le fermier a atteint le lit, mais le jeu n'a pas proposé de dormir.",
+
+  // what blocks the way
+  "blocker.at": "{{what}} en ({{tile}})",
+  "blocker.villager": "{{name}}",
+  "blocker.animal": "{{name}}",
+  "blocker.fruit-tree": "un arbre fruitier",
+  "blocker.tree": "un arbre",
+  "blocker.stump": "une souche",
+  "blocker.crop": "une culture",
+  "blocker.bush": "un buisson",
+  "blocker.large-stump": "une grosse souche",
+  "blocker.log": "un gros tronc",
+  "blocker.boulder": "un rocher",
+  "blocker.gate": "un portail fermé",
+  "blocker.fence": "une clôture",
+  "blocker.weeds": "des mauvaises herbes",
+  "blocker.stone": "une pierre",
+  "blocker.twig": "une brindille",
+  "blocker.object": "{{name}}",
+  "blocker.building": "{{name}}",
+  "blocker.map": "un mur ou de l'eau",
+  "route.ways-blocked": "Tous les chemins sont bloqués d'ici.",
+  "route.blocked-by": "Sur le chemin : {{what}}.",
+  "selfplay.waiting": "StardewPilot attend votre réponse : appuyez sur {{key}}. L'horloge est en pause.",
+  "warn.no-way-home": "StardewPilot ne trouve pas le chemin du lit : {{why}} Ramenez le fermier avant 2 h, sinon il s'évanouit."
 }

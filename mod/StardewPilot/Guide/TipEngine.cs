@@ -119,7 +119,9 @@ internal sealed class TipEngine
             if (count <= this.lastBin.GetValueOrDefault(id))
                 continue;
             Item? item = Game1.getFarm().getShippingBin(p).FirstOrDefault(i => i != null && KeyOf(i) == id);
-            if (item != null && BundleHelper.BundleNeeding(item) is { } bundle)
+            // ship_items keeps one of any bundle item in the backpack; then the bundle is not at risk.
+            bool kept = item != null && p.Items.Any(i => i != null && i.QualifiedItemId == item.QualifiedItemId && i.Quality >= item.Quality);
+            if (item != null && !kept && BundleHelper.BundleNeeding(item) is { } bundle)
                 this.Warn($"bin:{id}", I18n.Get("warn.bin-bundle", new { item = item.DisplayName, bundle }));
         }
         this.lastBin = bin;

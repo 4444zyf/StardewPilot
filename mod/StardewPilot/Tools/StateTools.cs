@@ -335,6 +335,7 @@ internal static class StateTools
                 dead = g.Dead,
                 inPots = g.InPots,
                 nextHarvestInDays = g.SoonestDays == int.MaxValue ? (int?)null : g.SoonestDays,
+                nextHarvestOn = g.SoonestDays == int.MaxValue ? null : DateIn(g.SoonestDays),
                 tiles = includeTiles ? g.Tiles : null,
             }),
         };
@@ -733,6 +734,14 @@ internal static class StateTools
     /// <summary>Game text is wrapped for its own UI; collapse that into plain sentences.</summary>
     public static string CleanText(string text) =>
         System.Text.RegularExpressions.Regex.Replace(text ?? "", @"\s+", " ").Trim();
+
+    /// <summary>The date a number of days from today, for example "Fall 1, Year 2" (seasons have 28 days).</summary>
+    public static string DateIn(int days)
+    {
+        var date = new WorldDate(Game1.year, Game1.season, Game1.dayOfMonth);
+        date.TotalDays += days;
+        return $"{char.ToUpperInvariant(date.SeasonKey[0])}{date.SeasonKey.Substring(1)} {date.DayOfMonth}, Year {date.Year}";
+    }
 
     public static string FormatTime(int time)
     {

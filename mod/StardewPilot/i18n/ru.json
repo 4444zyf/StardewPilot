@@ -328,5 +328,30 @@
   "fail.no-chest": "Здесь нет сундука: {{place}}.",
   "fail.no-chest-at-tile": "На этой клетке нет сундука или холодильника.",
   "fail.gift-refused": "{{npc}} не принимает подарок. {{said}}",
-  "fail.no-sleep": "Фермер дошёл до кровати, но игра не предложила лечь спать."
+  "fail.no-sleep": "Фермер дошёл до кровати, но игра не предложила лечь спать.",
+
+  // what blocks the way
+  "blocker.at": "{{what}} на ({{tile}})",
+  "blocker.villager": "{{name}}",
+  "blocker.animal": "{{name}}",
+  "blocker.fruit-tree": "фруктовое дерево",
+  "blocker.tree": "дерево",
+  "blocker.stump": "пень",
+  "blocker.crop": "грядка",
+  "blocker.bush": "куст",
+  "blocker.large-stump": "большой пень",
+  "blocker.log": "большое бревно",
+  "blocker.boulder": "валун",
+  "blocker.gate": "закрытые ворота",
+  "blocker.fence": "забор",
+  "blocker.weeds": "сорняки",
+  "blocker.stone": "камень",
+  "blocker.twig": "ветка",
+  "blocker.object": "{{name}}",
+  "blocker.building": "{{name}}",
+  "blocker.map": "стена или вода",
+  "route.ways-blocked": "Отсюда все пути перекрыты.",
+  "route.blocked-by": "Мешает: {{what}}.",
+  "selfplay.waiting": "StardewPilot ждёт вашего ответа: нажмите {{key}}. Часы остановлены.",
+  "warn.no-way-home": "StardewPilot не нашёл дорогу домой: {{why}} Отведите фермера домой до 2:00, иначе он упадёт без сил."
 }

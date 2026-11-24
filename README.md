@@ -296,7 +296,8 @@ The agent's only tools come from the bridge. The knowledge tools answer from the
 | `fish` | Finds open water, casts, strikes and plays the fishing minigame |
 | `explore_mines` | Goes down mine floors: takes ladders, breaks rocks to find them, fights monsters next to the farmer; stops at low health or energy |
 | `go_to_bed` | Walks home and sleeps |
-| `use_tool`, `interact` | Low-level fallbacks on one tile |
+| `clear_way` | Walks to a tile, cutting wild trees and stumps and clearing weeds, stones and twigs on the way (never fruit or tapped trees) |
+| `use_tool`, `interact` | Low-level fallbacks on one tile; `use_tool` reports what was on the tile before and after the swing |
 | `stop_autopilot` | Stops the current action |
 | `start_lesson`, `end_lesson` | "Watch me": records what the player does, then proposes a routine from it |
 | `save_routine`, `forget_routine` | Saves the proposed routine (with the player's changes, after an in-game yes), or deletes one |

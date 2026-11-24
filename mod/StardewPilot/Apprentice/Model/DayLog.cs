@@ -17,6 +17,12 @@ public static class Control
 
     /// <summary>Self-play was on: the copilot chose the work.</summary>
     public const string SelfPlay = "self-play";
+
+    /// <summary>A routine started by its schedule was running: nobody asked for it just then.</summary>
+    public const string Scheduled = "scheduled";
+
+    /// <summary>The copilot had the farmer last and the player has not moved since: nobody played.</summary>
+    public const string Idle = "idle";
 }
 
 /// <summary>Activity keys the watcher records. Habits are worked out over these.</summary>

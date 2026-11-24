@@ -20,12 +20,19 @@ internal sealed record Exit(string From, Point Tile, string To, Point Arrival, b
 /// </summary>
 internal static class Navigation
 {
-    private static readonly HashSet<string> BlockedExits = new();
-
-    /// <summary>Forget exits that failed earlier today (called at day start).</summary>
-    public static void ResetBlockedExits() => BlockedExits.Clear();
-
     private static string Key(Exit e) => $"{e.From}@{e.Tile.X},{e.Tile.Y}";
+
+    /// <summary>
+    /// An exit that failed, and the exits beside it to the same map (a map edge is a strip of warp tiles: when one is
+    /// unreachable, its neighbours usually are too). Remembered only for the walk that found them, so a way cleared
+    /// later in the day is tried again.
+    /// </summary>
+    private static IEnumerable<string> BlockWithNeighbours(Exit failed) =>
+        ExitsOf(Game1.getLocationFromName(failed.From) ?? Game1.currentLocation)
+            .Where(e => e.To.Equals(failed.To, StringComparison.OrdinalIgnoreCase) && e.IsDoor == failed.IsDoor
+                && Math.Abs(e.Tile.X - failed.Tile.X) + Math.Abs(e.Tile.Y - failed.Tile.Y) <= 3)
+            .Select(Key)
+            .Append(Key(failed));
 
     /// <summary>Every exit the farmer can use out of a map.</summary>
     public static List<Exit> ExitsOf(GameLocation loc)
@@ -57,10 +64,18 @@ internal static class Navigation
     }
 
     /// <summary>A map's name for the player: its display name when it is loaded, else its id.</summary>
-    private static string PlaceName(string id) => Game1.getLocationFromName(id)?.DisplayName ?? id;
+    private static string PlaceName(string id)
+    {
+        GameLocation? loc = Game1.getLocationFromName(id);
+        if (loc?.ParentBuilding is { } building)
+            return StardewPilot.Tools.AnimalTools.BuildingName(building);
+        return loc?.DisplayName ?? id;
+    }
+
+    private static bool IsBuildingInterior(string id) => Game1.getLocationFromName(id)?.ParentBuilding != null;
 
     /// <summary>A reason for a failed route, for the job's message.</summary>
-    private static string WhyNoRoute(string target)
+    private static string WhyNoRoute(string target, HashSet<string> blocked)
     {
         GameLocation? loc = Game1.getLocationFromName(target);
         if (loc == null)
@@ -80,14 +95,17 @@ internal static class Navigation
                 return I18n.Get("route.no-door");
             GameLocation? outside = b.GetParentLocation();
             if (outside != null && ExitsOf(outside).FirstOrDefault(e => e.To.Equals(target, StringComparison.OrdinalIgnoreCase)) is { } door
-                && BlockedExits.Contains(Key(door)))
-                return I18n.Get("route.door-blocked", new { tile = $"{door.Tile.X},{door.Tile.Y}" });
+                && blocked.Contains(Key(door)))
+            {
+                string? what = Blockers.Words(Blockers.Between(outside, DoorStand(outside, door.Tile), 2));
+                return I18n.Get("route.door-blocked", new { tile = $"{door.Tile.X},{door.Tile.Y}" }) + (what != null ? " " + I18n.Get("route.blocked-by", new { what }) : "");
+            }
         }
         return I18n.Get("route.locked");
     }
 
     /// <summary>Cheapest route (by estimated walking distance) from the farmer to a map, as a list of exits to use.</summary>
-    public static List<Exit>? PlanRoute(string targetLocation)
+    public static List<Exit>? PlanRoute(string targetLocation, HashSet<string>? blocked = null)
     {
         GameLocation start = Game1.currentLocation;
         if (start.NameOrUniqueName.Equals(targetLocation, StringComparison.OrdinalIgnoreCase))
@@ -108,7 +126,7 @@ internal static class Navigation
                 continue;
             foreach (Exit exit in ExitsOf(loc))
             {
-                if (BlockedExits.Contains(Key(exit)) || Game1.getLocationFromName(exit.To) == null)
+                if (blocked?.Contains(Key(exit)) == true || Game1.getLocationFromName(exit.To) == null)
                     continue;
                 int next = cost + Math.Abs(exit.Tile.X - node.at.X) + Math.Abs(exit.Tile.Y - node.at.Y) + 5;
                 if (best.TryGetValue(exit.To, out int known) && known <= next)
@@ -123,12 +141,21 @@ internal static class Navigation
     /// <summary>Walk to a map, and optionally to a tile in it (or next to it when <paramref name="adjacent"/>).</summary>
     public static IEnumerable WalkTo(JobContext ctx, string location, Point? tile, bool adjacent = false)
     {
-        for (int attempt = 0; attempt < 4; attempt++)
+        var blocked = new HashSet<string>();
+        int failures = 0;
+        string? firstWhy = null;
+        for (int hops = 0; hops < 16 && failures < 4; hops++)
         {
             string here = Game1.currentLocation.NameOrUniqueName;
             if (here.Equals(location, StringComparison.OrdinalIgnoreCase))
                 break;
-            List<Exit> route = PlanRoute(location) ?? throw JobContext.Fail(I18n.Get("fail.no-route", new { from = Game1.currentLocation.DisplayName, to = PlaceName(location), why = WhyNoRoute(location) }));
+            List<Exit> route = PlanRoute(location, blocked) ?? throw JobContext.Fail(I18n.Get("fail.no-route", new
+            {
+                from = Game1.currentLocation.DisplayName,
+                to = PlaceName(location),
+                // Every way was tried and failed here: say why the first one did, not "it may be locked".
+                why = firstWhy != null && !IsBuildingInterior(location) ? I18n.Get("route.ways-blocked") + " " + firstWhy : WhyNoRoute(location, blocked),
+            }));
             Exit hop = route[0];
             ctx.Progress($"walking to {location} (via {hop.To})");
             bool ok = false;
@@ -148,7 +175,10 @@ internal static class Navigation
             }
             if (!ok)
             {
-                BlockedExits.Add(Key(hop)); // try another way
+                firstWhy ??= why;
+                failures++;
+                foreach (string key in BlockWithNeighbours(hop))
+                    blocked.Add(key); // try another way
                 ctx.Log($"exit to {hop.To} blocked: {why}");
             }
         }
@@ -163,10 +193,12 @@ internal static class Navigation
     }
 
     /// <summary>Walk inside the current map. Retries with a fresh path if something blocks the way.</summary>
-    public static IEnumerable WalkWithinMap(JobContext ctx, Point target, bool adjacent)
+    /// <param name="clearTrees">Also cut down wild trees and stumps in the way (clear_way), not only weeds, stones and twigs.</param>
+    public static IEnumerable WalkWithinMap(JobContext ctx, Point target, bool adjacent, bool clearTrees = false)
     {
         GameLocation loc = Game1.currentLocation;
-        for (int attempt = 0; attempt < 3; attempt++)
+        bool stalled = false;
+        for (int attempt = 0; attempt < 4; attempt++)
         {
             if (IsAt(target, adjacent))
                 yield break;
@@ -174,52 +206,65 @@ internal static class Navigation
             PathFindController.isAtEnd endTest = adjacent
                 ? (node, end, _, _) => Math.Abs(node.x - end.X) + Math.Abs(node.y - end.Y) == 1
                 : PathFindController.isAtEndPoint;
-            Stack<Point>? path = PathFindController.findPath(Game1.player.TilePoint, target, endTest, loc, Game1.player, 30000);
+            Stack<Point>? path = clearTrees ? null : PathFindController.findPath(Game1.player.TilePoint, target, endTest, loc, Game1.player, 30000);
 
             // The game's pathfinder walks over beds, and stepping on a bed makes the game ask "Go to sleep for the night?",
             // which stops the job. Go around beds unless the bed is where the walk ends (going to bed).
-            HashSet<Point> beds = BedTiles(loc);
-            beds.Remove(target);
-            if (path != null && beds.Count > 0 && path.Any(beds.Contains))
+            // A villager standing still on the path makes the game's walker give up after a few seconds: go around them.
+            HashSet<Point> avoid = BedTiles(loc);
+            avoid.Remove(target);
+            if (stalled)
+                foreach (Point t in OccupiedTiles(loc))
+                    avoid.Add(t);
+            if (path != null && avoid.Count > 0 && (stalled || path.Any(avoid.Contains)))
             {
-                List<Point>? around = PathThroughDebris(loc, Game1.player.TilePoint, target, adjacent, beds);
+                List<Point>? around = PathThroughDebris(loc, Game1.player.TilePoint, target, adjacent, avoid);
                 if (around != null)
                 {
-                    ctx.Log($"path to ({target.X},{target.Y}) crossed a bed; going around it");
-                    foreach (object? step in WalkClearing(ctx, loc, around))
+                    ctx.Log($"path to ({target.X},{target.Y}) crossed {(stalled ? "a villager or animal" : "a bed")}; going around");
+                    foreach (object? step in WalkClearing(ctx, loc, around, clearTrees))
                         yield return step;
+                    if (Game1.currentLocation != loc)
+                        yield break;
                     continue;
                 }
             }
 
             if (path == null)
             {
-                // Blocked by weeds, stones or twigs? Walk through them, clearing them with tools like a player would.
-                List<Point>? clearing = PathThroughDebris(loc, Game1.player.TilePoint, target, adjacent, beds);
+                // Blocked by weeds, stones or twigs (or trees, for clear_way)? Walk through them, clearing them with tools like a player would.
+                List<Point>? clearing = PathThroughDebris(loc, Game1.player.TilePoint, target, adjacent, avoid, clearTrees);
                 if (clearing == null && attempt < 2 && (loc.animals.Length > 0 || loc.characters.Count > 0))
                 {
-                    // An animal or villager may be standing in a doorway; they move on, so wait and look again.
+                    // An animal or villager may be standing in a gap; they move on every few seconds, so wait (up to
+                    // ten seconds) and look again as soon as a way opens.
                     ctx.Log($"no path to ({target.X},{target.Y}); waiting for animals or villagers to move");
-                    for (int i = 0; i < 90; i++)
+                    for (int i = 0; i < 600; i++)
                     {
                         ctx.Touch();
                         yield return null;
+                        if (i % 30 == 29 && PathFindController.findPath(Game1.player.TilePoint, target, endTest, loc, Game1.player, 30000) != null)
+                            break;
                     }
+                    stalled = false;
                     continue;
                 }
                 if (clearing == null)
-                    throw JobContext.NoPath(I18n.Get("fail.no-path", new { tile = $"{target.X},{target.Y}", place = loc.DisplayName }));
-                foreach (object? step in WalkClearing(ctx, loc, clearing))
+                    throw NoPathTo(ctx, loc, target);
+                foreach (object? step in WalkClearing(ctx, loc, clearing, clearTrees))
                     yield return step;
+                if (Game1.currentLocation != loc)
+                    yield break;
                 continue;
             }
 
             Point end = path.Last();
+            Point from = Game1.player.TilePoint;
             ctx.Log($"walk start: {path.Count} steps to ({target.X},{target.Y})");
             Game1.player.controller = new PathFindController(path, loc, Game1.player, end);
-            Point lastTile = Game1.player.TilePoint;
+            Point lastTile = from;
             ctx.Progress($"walking to ({target.X}, {target.Y}) in {loc.DisplayName}");
-            while (Game1.player.controller != null && Game1.currentLocation == loc)
+            while (Game1.player.controller != null && Game1.currentLocation == loc && !WarpRequested())
             {
                 if (Game1.player.TilePoint != lastTile)
                 {
@@ -229,17 +274,60 @@ internal static class Navigation
                 yield return null;
             }
             ctx.Log($"walk end at ({Game1.player.TilePoint.X},{Game1.player.TilePoint.Y})");
-            // Walking into an exit starts a warp; the map only changes after the screen fades.
-            for (int i = 0; i < 600 && Game1.currentLocation == loc && (Game1.isWarping || Game1.locationRequest != null); i++)
-            {
-                ctx.Touch();
-                yield return null;
-            }
+            foreach (object? step in FinishWarp(ctx, loc))
+                yield return step;
             if (Game1.currentLocation != loc)
                 yield break; // walked through an exit; the caller decides what next
+            if (Game1.player.TilePoint == from && !IsAt(target, adjacent))
+            {
+                stalled = true; // the game's walker gave up without a step: something stands in the way
+                if (NextStepBlocker(loc, path) is { } who)
+                    ctx.Log($"walk stalled: {who.Report} in the way");
+            }
         }
         if (!IsAt(target, adjacent))
-            throw JobContext.NoPath(I18n.Get(adjacent ? "fail.blocked-next-to" : "fail.blocked-to", new { tile = $"{target.X},{target.Y}", place = loc.DisplayName }));
+            throw NoPathTo(ctx, loc, target, adjacent);
+    }
+
+    /// <summary>A no-path failure that says what is in the way, and reports the blockers to the agent.</summary>
+    private static JobStop NoPathTo(JobContext ctx, GameLocation loc, Point target, bool? adjacent = null)
+    {
+        var things = Blockers.Between(loc, target, besideTarget: adjacent == true);
+        if (things.Count > 0)
+            ctx.Report["blockedBy"] = Blockers.Report(things);
+        string? what = Blockers.Words(things);
+        string key = adjacent is null ? "fail.no-path" : adjacent.Value ? "fail.blocked-next-to" : "fail.blocked-to";
+        string text = I18n.Get(key, new { tile = $"{target.X},{target.Y}", place = loc.DisplayName });
+        return JobContext.NoPath(what != null ? text + " " + I18n.Get("route.blocked-by", new { what }) : text);
+    }
+
+    /// <summary>Tiles villagers and farm animals stand on.</summary>
+    private static IEnumerable<Point> OccupiedTiles(GameLocation loc) =>
+        loc.characters.Select(c => c.TilePoint).Concat(loc.animals.Values.Select(a => a.TilePoint));
+
+    /// <summary>What stands on the first tiles of a path, if anything.</summary>
+    private static Blockers.Thing? NextStepBlocker(GameLocation loc, Stack<Point> path) =>
+        path.Take(3).Select(t => Blockers.At(loc, t)).FirstOrDefault(t => t != null);
+
+    /// <summary>The game started a warp (the farmer stepped on a warp tile or used a door).</summary>
+    private static bool WarpRequested() => Game1.isWarping || Game1.locationRequest != null;
+
+    /// <summary>
+    /// After a walk that may have stepped onto a warp: stop the game's path walker at once (left running, it keeps
+    /// stepping onto the warp tile, asking for the warp again and again, and after the warp walks the farmer on in the
+    /// new map using the old map's tiles), then wait for the warp and fade to finish.
+    /// </summary>
+    private static IEnumerable FinishWarp(JobContext ctx, GameLocation loc)
+    {
+        if (WarpRequested() || Game1.currentLocation != loc)
+            Game1.player.controller = null;
+        for (int i = 0; i < 600 && Game1.currentLocation == loc && WarpRequested(); i++)
+        {
+            ctx.Touch();
+            yield return null;
+        }
+        if (Game1.currentLocation != loc)
+            Game1.player.controller = null;
     }
 
     /// <summary>The tiles beds cover on a map: walking onto one makes the game offer to sleep.</summary>
@@ -286,10 +374,10 @@ internal static class Navigation
     }
 
     /// <summary>A* where clearable debris is passable at extra cost. Returns the tiles to walk, start excluded.</summary>
-    public static List<Point>? PathThroughDebris(GameLocation loc, Point start, Point target, bool adjacent, HashSet<Point>? avoid = null)
+    public static List<Point>? PathThroughDebris(GameLocation loc, Point start, Point target, bool adjacent, HashSet<Point>? avoid = null, bool trees = false)
     {
         int w = loc.Map.Layers[0].LayerWidth, h = loc.Map.Layers[0].LayerHeight;
-        const int DebrisCost = 8;
+        const int DebrisCost = 8, TreeCost = 30;
         var cost = new Dictionary<Point, int> { [start] = 0 };
         var from = new Dictionary<Point, Point>();
         var open = new PriorityQueue<Point, int>();
@@ -319,6 +407,7 @@ internal static class Navigation
                 int step;
                 if (!inBounds || IsWalkable(loc, next)) step = 1;
                 else if (IsClearableDebris(loc, next)) step = DebrisCost;
+                else if (trees && Blockers.Clearable(loc, next)) step = TreeCost;
                 else continue;
                 int c = cost[cur] + step;
                 if (cost.TryGetValue(next, out int known) && known <= c)
@@ -331,15 +420,16 @@ internal static class Navigation
         return null;
     }
 
-    /// <summary>Walk a precomputed path, clearing debris on it with the matching tool.</summary>
-    private static IEnumerable WalkClearing(JobContext ctx, GameLocation loc, List<Point> path)
+    /// <summary>Walk a precomputed path, clearing debris (and, for clear_way, trees) on it with the matching tool.</summary>
+    private static IEnumerable WalkClearing(JobContext ctx, GameLocation loc, List<Point> path, bool trees = false)
     {
+        bool InTheWay(Point t) => IsClearableDebris(loc, t) || (trees && !IsWalkable(loc, t) && Blockers.Clearable(loc, t));
         int i = 0;
         while (i < path.Count && Game1.currentLocation == loc)
         {
-            // Walk the clear stretch up to the next debris tile.
+            // Walk the clear stretch up to the next thing to clear.
             int j = i;
-            while (j < path.Count && !IsClearableDebris(loc, path[j]))
+            while (j < path.Count && !InTheWay(path[j]))
                 j++;
             if (j > i)
             {
@@ -347,37 +437,38 @@ internal static class Navigation
                 Game1.player.controller = new PathFindController(segment, loc, Game1.player, path[j - 1]);
                 Point last = Game1.player.TilePoint;
                 ctx.Progress("walking (clearing a way)");
-                while (Game1.player.controller != null && Game1.currentLocation == loc)
+                while (Game1.player.controller != null && Game1.currentLocation == loc && !WarpRequested())
                 {
                     if (Game1.player.TilePoint != last) { last = Game1.player.TilePoint; ctx.Progress(); }
                     yield return null;
                 }
-                for (int k = 0; k < 600 && Game1.currentLocation == loc && (Game1.isWarping || Game1.locationRequest != null); k++)
-                {
-                    ctx.Touch();
-                    yield return null;
-                }
+                foreach (object? step in FinishWarp(ctx, loc))
+                    yield return step;
                 if (Game1.currentLocation != loc || Game1.player.TilePoint != path[j - 1])
                     yield break; // warped, or knocked off the path: the caller re-plans
             }
             if (j >= path.Count)
                 yield break;
 
-            // Clear the debris in front.
-            Point debris = path[j];
-            var obj = loc.objects[new Vector2(debris.X, debris.Y)];
-            StardewValley.Tool? tool = obj.IsWeeds() ? (StardewValley.Tool?)Actions.FindScythe() ?? Actions.FindTool<StardewValley.Tools.Pickaxe>()
-                : obj.IsBreakableStone() ? Actions.FindTool<StardewValley.Tools.Pickaxe>()
+            // Clear what is in front: weeds with the scythe, stones with the pickaxe, twigs, trees and stumps with the axe.
+            Point spot = path[j];
+            Blockers.Thing what = Blockers.At(loc, spot) ?? new Blockers.Thing("object", "something");
+            loc.objects.TryGetValue(new Vector2(spot.X, spot.Y), out StardewValley.Object? obj);
+            StardewValley.Tool? tool = obj?.IsWeeds() == true ? (StardewValley.Tool?)Actions.FindScythe() ?? Actions.FindTool<StardewValley.Tools.Pickaxe>()
+                : obj?.IsBreakableStone() == true ? Actions.FindTool<StardewValley.Tools.Pickaxe>()
                 : Actions.FindTool<StardewValley.Tools.Axe>();
             if (tool == null)
-                throw JobContext.Fail(I18n.Get("fail.debris-no-tool", new { thing = obj.DisplayName }));
-            for (int k = 0; k < 6 && IsClearableDebris(loc, debris); k++)
+                throw JobContext.Fail(I18n.Get("fail.debris-no-tool", new { thing = what.Word }));
+            int hits = what.Key is "tree" or "stump" ? 40 : 6; // a tree takes about ten swings, then its stump about five
+            for (int k = 0; k < hits && InTheWay(spot); k++)
             {
-                foreach (object? s in Actions.UseTool(ctx, Config(), tool, debris))
+                foreach (object? s in Actions.UseTool(ctx, Config(), tool, spot))
                     yield return s;
             }
-            if (IsClearableDebris(loc, debris))
-                throw JobContext.Fail(I18n.Get("fail.debris-stuck", new { thing = obj.DisplayName, tile = $"{debris.X},{debris.Y}" }));
+            if (InTheWay(spot))
+                throw JobContext.Fail(I18n.Get("fail.debris-stuck", new { thing = what.Word, tile = $"{spot.X},{spot.Y}" }));
+            if (what.Key is "tree" or "stump")
+                ctx.Report["treesCleared"] = (ctx.Report.TryGetValue("treesCleared", out object? n) && n is int c ? c : 0) + 1;
             i = j;
         }
     }
@@ -453,6 +544,8 @@ internal static class Navigation
             ctx.Touch();
             yield return null;
         }
+        if (Game1.currentLocation != from)
+            Game1.player.controller = null;
         bool arrived = Game1.currentLocation != from;
         if (arrived)
             ctx.Progress($"arrived in {Game1.currentLocation.DisplayName}");

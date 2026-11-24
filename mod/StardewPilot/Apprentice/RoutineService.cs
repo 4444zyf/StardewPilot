@@ -467,7 +467,7 @@ internal sealed class RoutineService
             Chest? box = Game1.getLocationFromName(map) is { } loc && int.TryParse(xy[0], out int x) && int.TryParse(xy[1], out int y)
                 ? ChestIds.At(loc, new Point(x, y)) : null;
             if (box == null)
-                throw new ToolError($"The chest at ({place.Substring(colon + 1)}) in {ApprenticeService.GameNames().Map(map)} is gone. Drop that step or teach it again.");
+                throw new ToolError($"The chest at ({place.Substring(colon + 1)}) in {ApprenticeService.AgentNames().Map(map)} is gone. Drop that step or teach it again.");
             s.Args["chest"] = $"{ChestIds.Stamp(box)}@{place}";
         }
 

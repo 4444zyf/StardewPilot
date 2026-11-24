@@ -47,7 +47,13 @@ public static class LogText
         string head = $"{Time.Format(s.Start)}-{Time.Format(s.End)} {Names.Clean(names.Map(s.Map))}";
         if (s.Control != Control.Hand)
         {
-            string who = s.Control == Control.SelfPlay ? "copilot in self-play" : "copilot, asked by the player";
+            string who = s.Control switch
+            {
+                Control.SelfPlay => "copilot in self-play",
+                Control.Scheduled => "copilot, a routine that started by its schedule",
+                Control.Idle => "idle where the copilot left the farmer",
+                _ => "copilot, asked by the player",
+            };
             var jobs = s.Jobs.Select(j => j.Split(' ').Skip(1).FirstOrDefault()?.TrimEnd(':') ?? j).Distinct().ToList();
             return $"{head}: {who}" + (jobs.Count > 0 ? $": {string.Join(", ", jobs)}" : "");
         }

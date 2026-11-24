@@ -174,12 +174,25 @@ internal static class ActionTools
             _ => ctx => macros.GoToBed(ctx));
 
         Action("use_tool",
-            "Low-level fallback: walk next to a tile in the current map and use a tool on it (Axe, Hoe, Pickaxe, Watering Can, Scythe).",
+            "Low-level fallback: walk next to a tile in the current map and use a tool on it (Axe, Hoe, Pickaxe, Watering Can, Scythe). " +
+            "Reports what was on the tile before and after the swing (with its health for trees, stumps and stones), whether the tile is walkable now, and the energy used.",
             Schema.Object(
                 ("tool", Schema.String("Tool name."), true),
                 ("x", Tile("Tile x."), true),
                 ("y", Tile("Tile y."), true)),
             a => ctx => macros.UseToolAt(ctx, a.Str("tool")!, new Point(a.Int("x") ?? 0, a.Int("y") ?? 0)));
+
+        Action("clear_way",
+            "Walk to a tile in the current map, cutting down wild trees and their stumps and clearing weeds, stones and twigs on the way " +
+            "(never fruit trees or tapped trees; large stumps, logs and boulders need upgraded tools and are not cut). Use it when walking " +
+            "fails because growth closes the way (a failure's blockedBy lists what is in the way). It prefers going around: it cuts only " +
+            "what it must. Costs energy and time: a tree takes about 15 axe swings with its stump. Set adjacent to stop next to the tile " +
+            "(for example to reach a door).",
+            Schema.Object(
+                ("x", Tile("Tile x."), true),
+                ("y", Tile("Tile y."), true),
+                ("adjacent", Schema.Boolean("Stop next to the tile instead of on it (default false)."), false)),
+            a => ctx => macros.ClearWay(ctx, new Point(a.Int("x") ?? 0, a.Int("y") ?? 0), a.Bool("adjacent") ?? false));
 
         Action("interact",
             "Low-level fallback: walk next to a tile in the current map and press the action button on it (open, pick up, read a sign). Returns any dialogue shown.",

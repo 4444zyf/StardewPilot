@@ -42,11 +42,31 @@ internal sealed class Chores
             throw JobContext.Fail(buildingFilter == null ? I18n.Get("fail.no-animal-buildings") : I18n.Get("fail.no-such-building", new { name = buildingFilter }));
 
         var report = new TendReport();
+        var unreachable = new List<string>();
         foreach (Building b in buildings)
         {
             var house = (AnimalHouse)b.GetIndoors()!;
-            foreach (object? s in Navigation.WalkTo(ctx, house.NameOrUniqueName, null))
-                yield return s;
+            // One building that cannot be reached does not undo the others: say so and go on.
+            string? why = null;
+            IEnumerator walk = Navigation.WalkTo(ctx, house.NameOrUniqueName, null).GetEnumerator();
+            while (true)
+            {
+                bool more;
+                try { more = walk.MoveNext(); }
+                catch (JobStop stop) when (stop.Outcome == JobOutcome.Failed)
+                {
+                    why = stop.Message;
+                    break;
+                }
+                if (!more) break;
+                yield return walk.Current;
+            }
+            if (why != null)
+            {
+                unreachable.Add(why);
+                report.Problems.Add(why);
+                continue;
+            }
             ctx.Progress($"tending the {AnimalTools.BuildingName(b)}");
 
             foreach (object? s in this.PickUpFloorProduce(ctx, house, report))
@@ -61,6 +81,9 @@ internal sealed class Chores
                     yield return s;
             }
         }
+
+        if (unreachable.Count == buildings.Count)
+            throw JobContext.Fail(string.Join(" ", unreachable));
 
         // Animals out on the farm whose home is one of these buildings.
         Farm farm = Game1.getFarm();

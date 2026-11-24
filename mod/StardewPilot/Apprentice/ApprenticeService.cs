@@ -59,7 +59,7 @@ internal sealed class ApprenticeService
         DayLog? log = this.Watcher.EndDay();
         if (log == null)
             return new();
-        Names names = GameNames();
+        Names names = AgentNames();
         this.memory.WriteActivity(log.Date, JsonConvert.SerializeObject(log));
 
         var dates = this.memory.ActivityLogs().Select(x => x.date).OrderByDescending(MemoryStore.SortKey).ToList();
@@ -100,7 +100,7 @@ internal sealed class ApprenticeService
         return logs;
     }
 
-    public List<Habit> Habits() => HabitFinder.Find(this.Logs(), GameNames());
+    public List<Habit> Habits() => HabitFinder.Find(this.Logs(), AgentNames());
 
     /// <summary>Habit lines for the day seed (at most ten), or nothing when watching is off.</summary>
     public List<string> SeedLines() => this.Enabled ? this.Habits().Select(h => h.Text).Take(10).ToList() : new();
@@ -199,6 +199,47 @@ internal sealed class ApprenticeService
         Shop = id => ShopNames.TryGetValue(id, out string? key) ? I18n.Get(key) : id,
     };
 
+    /// <summary>
+    /// English names, for text only the copilot reads: the diary, the activity log and habits. Kept in one language
+    /// whatever the game's language, so that a habit is the same habit on days played in different languages.
+    /// </summary>
+    public static Names AgentNames() => new()
+    {
+        Item = id => ItemRegistry.GetDataOrErrorItem(id).InternalName,
+        Map = EnglishMapName,
+        Npc = id => id,
+        Shop = id => id,
+    };
+
+    /// <summary>English words for maps whose id does not read well; others are their id split into words.</summary>
+    private static readonly Dictionary<string, string> EnglishMaps = new()
+    {
+        ["Farm"] = "the farm", ["FarmHouse"] = "the farmhouse", ["Cabin"] = "a cabin", ["Greenhouse"] = "the greenhouse",
+        ["Town"] = "Pelican Town", ["Forest"] = "Cindersap Forest", ["Mountain"] = "the mountain", ["Beach"] = "the beach",
+        ["BusStop"] = "the Bus Stop", ["Backwoods"] = "the backwoods", ["Railroad"] = "the railroad", ["Woods"] = "the Secret Woods",
+        ["Mine"] = "the mine entrance", ["Mines"] = "the mines", ["SkullCave"] = "the Skull Cavern", ["Volcano"] = "the volcano",
+        ["SeedShop"] = "Pierre's General Store", ["JojaMart"] = "JojaMart", ["Saloon"] = "the Stardrop Saloon", ["AnimalShop"] = "Marnie's Ranch",
+        ["Blacksmith"] = "the blacksmith", ["FishShop"] = "Willy's Fish Shop", ["ScienceHouse"] = "Robin's Carpenter Shop",
+        ["ArchaeologyHouse"] = "the museum", ["CommunityCenter"] = "the Community Center", ["WizardHouse"] = "the Wizard's Tower",
+        ["Desert"] = "the Calico Desert", ["IslandSouth"] = "Ginger Island", ["Sewer"] = "the sewers",
+    };
+
+    private static string EnglishMapName(string id)
+    {
+        if (EnglishMaps.TryGetValue(id, out string? name))
+            return name;
+        GameLocation? loc = Game1.getLocationFromName(id);
+        if (loc is StardewValley.Locations.Cabin)
+            return "a cabin";
+        if (loc is StardewValley.Locations.FarmHouse)
+            return "the farmhouse";
+        if (loc?.ParentBuilding is { } building)
+            return "the " + building.buildingType.Value;
+        if (loc is StardewValley.Locations.MineShaft)
+            return id.StartsWith("UndergroundMine") && int.TryParse(id.Substring("UndergroundMine".Length), out int floor) && floor > 120 ? "the Skull Cavern" : "the mines";
+        return System.Text.RegularExpressions.Regex.Replace(id, "(?<=[a-z])(?=[A-Z])", " ");
+    }
+
     /// <summary>A map's name for a log line. The farm and its buildings show the farm's name, so they get plain words.</summary>
     private static string MapName(string id)
     {
@@ -244,7 +285,7 @@ internal sealed class ApprenticeService
     {
         if (!this.Enabled)
             return new { enabled = false, reason = "Watching is switched off (Apprentice.Enabled in config.json)." };
-        Names names = GameNames();
+        Names names = AgentNames();
         var result = new List<object>();
         if (this.Watcher.Today() is { } today)
             result.Add(new { date = today.Date, today = true, lines = LogText.Lines(today, names) });
@@ -264,7 +305,7 @@ internal sealed class ApprenticeService
         if (!this.Enabled)
             return new { enabled = false, reason = "Watching is switched off (Apprentice.Enabled in config.json)." };
         var logs = this.Logs();
-        Names names = GameNames();
+        Names names = AgentNames();
         var habits = HabitFinder.Find(logs, names);
         return new
         {

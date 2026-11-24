@@ -43,6 +43,12 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 	let selfPlay = false;
 	let actionsThisRun = 0;
 	let idleRuns = 0;
+	/** Self-play runs that ended on the failed-actions limit, with no successful action since. */
+	let haltsInARow = 0;
+	/** Self-play stopped to wait for the player's answer (it stays on; the game holds the clock). */
+	let waitingForPlayer = false;
+	/** A note for the next self-play step after a halt. */
+	let recoveryNote: string | undefined;
 	let newDayPending = false;
 	let stepTimer: ReturnType<typeof setTimeout> | undefined;
 	let reconnectTimer: ReturnType<typeof setInterval> | undefined;
@@ -105,6 +111,7 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 					try {
 						const result = await c.callTool(tool.name, (params ?? {}) as Record<string, unknown>, isAction ? ACTION_TIMEOUT_MS : undefined);
 						if (isGameAction(tool.name) && actionFailed(result)) failedActions++;
+						else if (isGameAction(tool.name)) haltsInARow = 0;
 						return {
 							content: result.content,
 							details: undefined,
@@ -175,7 +182,8 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 	function handleBridgeNotification(method: string, params: unknown) {
 		const p = (params ?? {}) as Record<string, unknown>;
 		if (method === "chat/user_message" && typeof p.text === "string" && p.text.trim()) {
-			// The player typed in the private in-game overlay.
+			// The player typed in the private in-game overlay. An answer ends a wait: self-play goes on after this reply.
+			if (waitingForPlayer) setWaiting(false);
 			if (running) pi.sendUserMessage(p.text, { deliverAs: "followUp" });
 			else {
 				runKind = "reply";
@@ -199,7 +207,11 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 					{ triggerTurn: true, deliverAs: "followUp" },
 				);
 			}
-			if (!selfPlay) cancelStep();
+			if (!selfPlay) {
+				cancelStep();
+				waitingForPlayer = false;
+				haltsInARow = 0;
+			}
 		} else if (method === "routines/ran" && typeof p.text === "string") {
 			// The mod ran one of the player's routines by its schedule and told the player itself; keep it as context.
 			pi.sendMessage(
@@ -231,6 +243,19 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 		return !readOnly.has(name) && !name.startsWith("write_") && !["set_self_play", "stop_autopilot", "go_to_bed", "save_routine", "forget_routine", "schedule_routine", "unschedule_routine"].includes(name);
 	}
 
+	function takeRecoveryNote(): string {
+		const note = recoveryNote ?? "";
+		recoveryNote = undefined;
+		return note;
+	}
+
+	/** Self-play waits for the player (it stays on); the game holds the clock until they answer or move. */
+	function setWaiting(waiting: boolean) {
+		waitingForPlayer = waiting;
+		if (!waiting) haltsInARow = 0;
+		void client?.request("selfplay/waiting", { waiting }).catch(() => {});
+	}
+
 	function cancelStep() {
 		if (stepTimer) clearTimeout(stepTimer);
 		stepTimer = undefined;
@@ -239,10 +264,10 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 	/** Ask the game whether self-play may continue, then send the next step (or wait and ask again). */
 	function scheduleSelfPlayStep(delayMs: number) {
 		cancelStep();
-		if (!selfPlay) return;
+		if (!selfPlay || waitingForPlayer) return;
 		stepTimer = setTimeout(async () => {
 			stepTimer = undefined;
-			if (running || !selfPlay || newDayPending) return;
+			if (running || !selfPlay || waitingForPlayer || newDayPending) return;
 			const c = await ensureConnected();
 			if (!c) return scheduleSelfPlayStep(10_000);
 			let next: { go?: boolean; wait?: boolean; waitSeconds?: number; brief?: string; reason?: string };
@@ -255,7 +280,7 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 				pi.sendMessage(
 					{
 						customType: "stardew-selfplay",
-						content: `[Self-play] ${next.brief ?? ""} Continue with today's plan: do the next task with the action tools. If the plan is done, pick something useful toward the goal, or write the day summary and go to bed if it is evening.`,
+						content: `[Self-play] ${next.brief ?? ""} ${takeRecoveryNote()}Continue with today's plan: do the next task with the action tools. If the plan is done, pick something useful toward the goal, or write the day summary and go to bed if it is evening.`,
 						display: true,
 					},
 					{ triggerTurn: true, deliverAs: "followUp" },
@@ -318,9 +343,15 @@ export function createStardewPilot(pi: ExtensionAPI, connector: Connector) {
 			return;
 		}
 		if (failedActions >= MAX_FAILED_ACTIONS) {
-			// The agent hit the re-plan limit and has explained; hand back to the player.
-			selfPlay = false;
-			void client?.callTool("set_self_play", { enabled: false }).catch(() => {});
+			// The agent hit the re-plan limit and has explained. The limit stops a loop of the same failure, not the day:
+			// once, go on with something else; a second halt with nothing done in between waits for the player.
+			haltsInARow++;
+			if (haltsInARow >= 2) {
+				setWaiting(true);
+				return;
+			}
+			recoveryNote = `The last ${failedActions} actions failed and were stopped. Do not repeat them. Do something else toward the goal that does not need that place or route (clear_way if growth blocks it), or end the day if it is late. If nothing at all is possible, say what you need from the player. `;
+			scheduleSelfPlayStep(1000);
 			return;
 		}
 		// A step that did nothing twice in a row means the agent is stuck or done: pause and let the player decide.

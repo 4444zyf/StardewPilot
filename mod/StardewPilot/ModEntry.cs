@@ -33,6 +33,12 @@ public sealed class ModEntry : Mod
     private bool autoLoadDone;
     private int lastBusyScreenTick;
 
+    /// <summary>The copilot moved the farmer last (a job ended) and the player has not moved since.</summary>
+    private bool copilotHasFarmer;
+
+    /// <summary>Today's end-of-day walk to bed was started already (it is started once a day at most).</summary>
+    private bool endOfDayStarted;
+
     /// <summary>Tips sent to the agent for wording, with the time their fallback text is due.</summary>
     private readonly Queue<(TipTrigger tip, double deadline)> pendingTips = new();
     private const double TipWaitSeconds = 45;
@@ -78,6 +84,8 @@ public sealed class ModEntry : Mod
         this.apprentice.Register(this.tools);
         this.routines.Register(this.tools);
         this.runner.Started += _ => this.apprentice.Watcher.OnJobStarted();
+        this.apprentice.Watcher.ScheduledRunning = () => this.scheduler!.ScheduledRunning;
+        this.apprentice.Watcher.CopilotHasFarmer = () => this.copilotHasFarmer;
         // Each step of a routine counts as its own job for the self-play log and the watcher.
         this.runner.StepFinished += (name, result) =>
         {
@@ -86,6 +94,7 @@ public sealed class ModEntry : Mod
         };
         this.runner.Finished += (name, result) =>
         {
+            this.copilotHasFarmer = true;
             this.selfPlay.LogJob(name, result);
             this.apprentice.Watcher.OnJobFinished(name, result);
             this.routines.OnJobFinished(name, result);
@@ -128,7 +137,9 @@ public sealed class ModEntry : Mod
         helper.Events.GameLoop.DayStarted += (_, _) =>
         {
             this.tips.OnDayStarted();
-            Navigation.ResetBlockedExits();
+            this.copilotHasFarmer = false;
+            this.endOfDayStarted = false;
+            AgentState.SetWaiting(false);
             this.selfPlay.OnDayStarted();
             this.scheduler!.OnDayStarted();
             this.PrepareBriefing();
@@ -214,6 +225,14 @@ public sealed class ModEntry : Mod
                 AgentState.SetBusy(p?.Value<bool?>("busy") ?? false, p?.Value<string>("activity"));
                 return Task.FromResult<object?>(new { });
             });
+            this.bridge.Register("selfplay/waiting", (p, _) => MainThread.Run<object?>(() =>
+            {
+                bool waiting = p?.Value<bool?>("waiting") ?? false;
+                AgentState.SetWaiting(waiting && this.selfPlay.Enabled);
+                if (AgentState.Waiting)
+                    Game1.addHUDMessage(new HUDMessage(I18n.Get("selfplay.waiting", new { key = this.config.ChatKey })) { noIcon = true });
+                return new { waiting = AgentState.Waiting };
+            }));
             this.bridge.Start();
 
             ConnectionFile.Write(this.bridge.Url, this.config.Port, this.config.Token, Game1.version, this.ModManifest.Version.ToString());
@@ -244,7 +263,9 @@ public sealed class ModEntry : Mod
             this.scheduler!.Tick();
 
             // Single-player: hold the clock while the agent thinks (not while autopilot jobs run). Co-op cannot pause freely.
-            bool hold = this.config.Dev.FreezeTime || (this.config.PauseWhileThinking && AgentState.Busy && !this.runner.IsRunning && !Context.IsMultiplayer);
+            // Also while self-play waits for the player's answer: the day should not run out while the question is unread.
+            bool hold = this.config.Dev.FreezeTime
+                || (this.config.PauseWhileThinking && (AgentState.Busy || (AgentState.Waiting && this.selfPlay.Enabled)) && !this.runner.IsRunning && !Context.IsMultiplayer);
             if (hold)
                 Game1.gameTimeInterval = 0;
 
@@ -270,10 +291,18 @@ public sealed class ModEntry : Mod
     /// <summary>Late at night, stop work and go to bed, whatever the plan says. Passing out costs gold.</summary>
     private void EnforceEndOfDay()
     {
-        if (!this.runner!.IsRunning || this.runner.CurrentJob is "go_to_bed" or "go_to_bed (end of day)")
+        if (Game1.timeOfDay < this.config.Autopilot.StopWorkAt || this.runner!.CurrentJob is "go_to_bed" or "go_to_bed (end of day)")
             return;
-        if (Game1.timeOfDay < this.config.Autopilot.StopWorkAt)
+        if (!this.runner.IsRunning)
+        {
+            // Nothing running, but the copilot has the farmer (self-play, or a job left the farmer and the player has not
+            // moved since): the farmer still has to get to bed. Started once; the player can always take over.
+            if (this.endOfDayStarted || !(this.selfPlay.Enabled || this.copilotHasFarmer) || !Context.IsPlayerFree || Game1.player.isInBed.Value)
+                return;
+            this.endOfDayStarted = true;
+            this.StartEndOfDayBed();
             return;
+        }
         // A routine started by its schedule only stops: nobody asked for it just then, so nobody asked to end the day.
         if (this.scheduler!.ScheduledRunning)
         {
@@ -281,8 +310,25 @@ public sealed class ModEntry : Mod
             return;
         }
         this.runner.Stop(JobOutcome.Partial, I18n.Get("stop.late-bed"), StopCause.EndOfDay);
+        this.endOfDayStarted = true;
+        this.StartEndOfDayBed();
+    }
+
+    /// <summary>Walk to bed; if no way home is found, tell the player at once while there is still time before 2am.</summary>
+    private void StartEndOfDayBed()
+    {
         var macros = new Macros(() => this.config, this.Helper);
-        _ = this.runner.Start("go_to_bed (end of day)", ctx => macros.GoToBed(ctx));
+        this.runner!.Start("go_to_bed (end of day)", ctx => macros.GoToBed(ctx)).ContinueWith(t =>
+        {
+            if (t.IsCompletedSuccessfully && t.Result.Outcome != JobOutcome.Done)
+                _ = MainThread.Run<object?>(() =>
+                {
+                    string text = I18n.Get("warn.no-way-home", new { why = t.Result.Summary });
+                    Game1.addHUDMessage(new HUDMessage(text, HUDMessage.error_type));
+                    ChatLog.Add(ChatSender.System, text);
+                    return null;
+                });
+        });
     }
 
     /// <summary>Movement or tool input from the player cancels the autopilot at once.</summary>
@@ -334,7 +380,13 @@ public sealed class ModEntry : Mod
             this.Helper.Input.Suppress(e.Button);
             return;
         }
-        if ((this.runner!.IsRunning || this.selfPlay.Enabled) && IsTakeControlInput(e.Button))
+        bool takeControl = IsTakeControlInput(e.Button);
+        if (takeControl)
+        {
+            this.copilotHasFarmer = false;
+            AgentState.SetWaiting(false);
+        }
+        if ((this.runner!.IsRunning || this.selfPlay.Enabled) && takeControl)
         {
             this.runner.Stop(JobOutcome.Partial, I18n.Get("stop.player"), StopCause.Player);
             if (this.selfPlay.Enabled)

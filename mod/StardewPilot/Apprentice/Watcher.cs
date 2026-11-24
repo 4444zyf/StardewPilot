@@ -242,12 +242,25 @@ internal sealed class Watcher
 
     // ------------------------------------------------------------ slices
 
+    /// <summary>True while a routine started by its schedule runs (set by the mod).</summary>
+    public Func<bool> ScheduledRunning { get; set; } = () => false;
+
+    /// <summary>True from the end of a copilot job until the player next moves or uses a tool (set by the mod).</summary>
+    public Func<bool> CopilotHasFarmer { get; set; } = () => false;
+
     private string ControlNow()
     {
         if (this.selfPlay.Enabled)
             return Control.SelfPlay;
         if (this.runner.IsRunning && !this.config().Dev.WatchJobsAsHand)
-            return this.cur?.Control == Control.SelfPlay ? Control.SelfPlay : Control.Asked; // a self-play job runs on after self-play stops
+        {
+            if (this.cur?.Control == Control.SelfPlay)
+                return Control.SelfPlay; // a self-play job runs on after self-play stops
+            return this.ScheduledRunning() ? Control.Scheduled : Control.Asked;
+        }
+        // Standing where the copilot left the farmer is not the player's play: hand time starts with the player's input.
+        if (this.CopilotHasFarmer() && !this.config().Dev.WatchJobsAsHand)
+            return Control.Idle;
         return Control.Hand;
     }
 
