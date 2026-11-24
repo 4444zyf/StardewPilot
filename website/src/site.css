@@ -51,14 +51,29 @@ svg.px { display: inline-block; vertical-align: middle; }
 
 /* top bar: language tags and GitHub */
 .top { display: flex; justify-content: space-between; gap: 12px; padding: 14px 20px; flex-wrap: wrap; }
-.langs { display: flex; gap: 8px; flex-wrap: wrap; }
 .tag {
 	font-size: 24px; line-height: 1.3; text-decoration: none; color: #fff1c8; text-shadow: 2px 2px 0 var(--wood-d);
 	background: #6b3612; border: 3px solid var(--wood-d); border-radius: 4px; padding: 2px 12px; box-shadow: inset 0 3px 0 #9c5f2c;
 }
-.tag[lang="zh-Hans"] { font-family: "Fusion Pixel ZH", monospace; }
-.tag.on { background: #ffd284; color: var(--maroon); text-shadow: none; box-shadow: inset 0 3px 0 #fff3d2; }
 a.tag:hover { background: #8a4a1c; }
+[lang="zh-Hans"] { font-family: "Fusion Pixel ZH", "Fusion Pixel", monospace; }
+
+/* the language menu: one wooden tag that opens a parchment list (a <details>, so it works without JavaScript) */
+.langs { position: relative; z-index: 5; }
+.langs summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; user-select: none; }
+.langs summary::-webkit-details-marker { display: none; }
+.langs summary:hover { background: #8a4a1c; }
+.langs[open] summary { background: #ffd284; color: var(--maroon); text-shadow: none; box-shadow: inset 0 3px 0 #fff3d2; }
+.caret { width: 12px; height: 8px; background: currentColor; clip-path: polygon(0 0, 100% 0, 100% 25%, 83% 25%, 83% 50%, 67% 50%, 67% 75%, 33% 75%, 33% 50%, 17% 50%, 17% 25%, 0 25%); filter: drop-shadow(2px 2px 0 var(--wood-d)); }
+.langs[open] .caret { transform: scaleY(-1); filter: none; }
+.menu { position: absolute; top: calc(100% + 8px); left: 0; min-width: 220px; list-style: none; padding: 12px 10px; }
+.menu li + li { border-top: 3px solid #e9c48a; }
+.menu a, .menu .on { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 44px; text-decoration: none; color: var(--ink); position: relative; }
+.menu a:hover, .menu a:focus-visible { background: #ffe7bd; }
+.menu a:hover::before { content: ""; position: absolute; left: 12px; width: 14px; height: 14px; background: #c0221a; clip-path: polygon(0 0, 100% 50%, 0 100%); }
+.menu .on { color: var(--maroon); }
+.menu .on { background: #ffe1a6; box-shadow: inset 0 0 0 3px #e9b65b; }
+.menu .tick { position: absolute; left: 8px; top: 50%; margin-top: -11px; }
 
 /* the sign */
 .sign { position: relative; margin: 26px auto 0; width: fit-content; max-width: calc(100% - 32px); text-align: center; }

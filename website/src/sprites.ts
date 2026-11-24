@@ -165,6 +165,18 @@ export const SPRITES: Record<string, Sprite> = {
 			"......KK"
 		]
 	},
+	"check": {
+		"w": 9,
+		"p": { "G": "#4f9a2a", "L": "#7ed957" },
+		"r": ["......KKK", ".....KLGK", "KKK.KLGK", "KLGKKLGK", ".KLGLGK", "..KLGK", "...KK"]
+	},
+	"globe": {
+		"p": { "B": "#4aa3d8", "L": "#8fd3f2", "G": "#5fae2d", "D": "#2f7d32" },
+		"r": [
+			"", "....KKKKKK", "..KKBBGGBBKK", ".KBBBGGGGBLBK", ".KBGGGGGBBBBK", "KBBGGGGBBBBBBK", "KBBBGGBBBBGGBK", "KBBBBGBBBGGGBK",
+			"KBBBBBBBGGGGDK", "KBBBBBBBBGGDBK", ".KBGBBBBBBGBK", ".KBGGBBBBBBBK", "..KKBBBBBBKK", "....KKKKKK"
+		]
+	},
 	"star": {
 		"w": 7,
 		"p": {

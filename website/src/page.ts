@@ -64,7 +64,10 @@ ${LANGS.filter((l) => l !== lang).map((l) => `<link rel="alternate" hreflang="${
 </head>
 <body>
 <header class="top">
-	<nav class="langs" aria-label="${e(t.nav.language)}">${LANGS.map((l) => (l === lang ? `<span class="tag on" lang="${HTML_LANG[l]}">${LANG_NAMES[l]}</span>` : `<a class="tag" lang="${HTML_LANG[l]}" hreflang="${HTML_LANG[l]}" href="${href(l)}">${LANG_NAMES[l]}</a>`)).join("")}</nav>
+	<details class="langs">
+		<summary class="tag" aria-label="${e(t.nav.language)}: ${LANG_NAMES[lang]}">${sprite("globe", 2)}<span lang="${HTML_LANG[lang]}">${LANG_NAMES[lang]}</span><i class="caret"></i></summary>
+		<ul class="menu frame thin">${LANGS.map((l) => `<li>${l === lang ? `<span class="on" aria-current="true" lang="${HTML_LANG[l]}">${sprite("check", 3, "px tick")}${LANG_NAMES[l]}</span>` : `<a lang="${HTML_LANG[l]}" hreflang="${HTML_LANG[l]}" href="${href(l)}">${LANG_NAMES[l]}</a>`}</li>`).join("")}</ul>
+	</details>
 	<a class="tag gh" href="${REPO}">GitHub</a>
 </header>
 
@@ -135,6 +138,7 @@ ${t.start.steps.map((s, i) => `		<li class="note"><h3><span>${i + 1}</span> ${e(
 	<p class="small">${e(t.footer.fonts)}</p>
 	<p class="mascot">${sprite("bot", 4)}</p>
 </footer>
+<script>{const d=document.querySelector(".langs");addEventListener("click",e=>{if(!d.contains(e.target))d.open=false});addEventListener("keydown",e=>{if(e.key==="Escape"&&d.open){d.open=false;d.querySelector("summary").focus()}})}</script>
 </body>
 </html>
 `;
